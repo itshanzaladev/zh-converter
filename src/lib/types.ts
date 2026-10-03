@@ -1,0 +1,52 @@
+export type Language = "html" | "css" | "js" | "python" | "c" | "cpp" | "java";
+
+export type CodeFile = {
+  id: string;
+  name: string;
+  content: string;
+  language: Language;
+  /** null until the student places it in a question. */
+  question: number | null;
+  /** A number guessed from a loose filename (e.g. "2.html"), shown as a suggestion. */
+  suggested: number | null;
+};
+
+export type OutputState =
+  | { status: "idle" }
+  | { status: "running" }
+  | { status: "done"; image: string; width: number; height: number; source: "auto" | "upload" }
+  | { status: "error"; message: string };
+
+export type Question = {
+  number: number;
+  statement: string;
+  stdin: string;
+  output: OutputState;
+};
+
+export type CoverDetails = {
+  university: string;
+  campus: string;
+  assignment: string;
+  subject: string;
+  name: string;
+  regNo: string;
+  section: string;
+  instructor: string;
+  date: string;
+  /** Data URL of the uploaded university logo. */
+  logo: string | null;
+};
+
+export const EMPTY_COVER: CoverDetails = {
+  university: "",
+  campus: "",
+  assignment: "",
+  subject: "",
+  name: "",
+  regNo: "",
+  section: "",
+  instructor: "",
+  date: "",
+  logo: null,
+};

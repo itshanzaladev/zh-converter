@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ZH Converter tokens. Light = paper; dark = warm ink. */
+:root {
+  --paper: #fffaf7;
+  --surface: #ffffff;
+  --blush: #fde8dc;
+  --peach: #f5a07f;
+  --peach-strong: #e9805a;
+  --accent-text: #b4502c;
+  --ink: #241a1e;
+  --muted: #74656a;
+  --line: #f0ddd3;
+  --code-bg: #2a2024;
+  --code-ink: #f6e9e2;
+}
+
+.dark {
+  --paper: #171113;
+  --surface: #211a1c;
+  --blush: #33231f;
+  --peach: #f5a07f;
+  --peach-strong: #f7b296;
+  --accent-text: #f7b296;
+  --ink: #f6ece6;
+  --muted: #b3a29f;
+  --line: #3a2c2b;
+  --code-bg: #0f0b0c;
+  --code-ink: #f6e9e2;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-blush: var(--blush);
+  --color-peach: var(--peach);
+  --color-peach-strong: var(--peach-strong);
+  --color-accent: var(--accent-text);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-code: var(--code-bg);
+  --color-code-ink: var(--code-ink);
+  --font-display: var(--font-bricolage);
+  --font-sans: var(--font-onest);
+  --font-mono: var(--font-jetbrains);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-onest), system-ui, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+::selection {
+  background: var(--peach);
+  color: #241a1e;
+}
+
+:focus-visible {
+  outline: 2px solid var(--peach-strong);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
