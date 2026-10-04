@@ -32,7 +32,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${bricolage.variable} ${onest.variable} ${jetbrains.variable} antialiased`}
     >
-      <body className="min-h-screen">
+      {/* Browser extensions (e.g. ColorZilla) add attributes to <body> before React hydrates. */}
+      <body className="min-h-screen" suppressHydrationWarning>
         <Providers>
           {children}
           <Cursor />
