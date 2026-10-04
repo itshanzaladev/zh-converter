@@ -11,7 +11,7 @@ import { captureWebOutput } from "@/lib/render-web";
 import { captureConsoleOutput } from "@/lib/render-console";
 import { assignmentFilename, type AssignmentDoc } from "@/lib/assignment";
 import { downloadBlob } from "@/lib/images";
-import { CoverPage } from "@/components/cover-page";
+import { CoverPage, withPlaceholders } from "@/components/cover-page";
 import { CoverForm } from "./cover-form";
 import { DropZone } from "./drop-zone";
 import { QuestionCard } from "./question-card";
@@ -292,21 +292,7 @@ export default function Builder() {
 
       <aside className="lg:sticky lg:top-24 lg:self-start">
         <div className="mx-auto max-w-[260px] overflow-hidden rounded-lg shadow-[0_24px_50px_-28px_rgba(120,60,40,0.5),0_0_0_1px_rgba(36,26,30,0.06)]">
-          <CoverPage
-            style="classic"
-            logo={cover.logo}
-            details={{
-              university: cover.university || "University",
-              campus: cover.campus || "Campus",
-              assignment: cover.assignment || "Assignment #",
-              subject: cover.subject || "Subject",
-              name: cover.name || "—",
-              regNo: cover.regNo || "—",
-              section: cover.section || "—",
-              instructor: cover.instructor || "—",
-              date: cover.date || "—",
-            }}
-          />
+          <CoverPage cover={withPlaceholders(cover)} />
         </div>
 
         <div className="mt-6 rounded-2xl border border-line bg-surface p-5">

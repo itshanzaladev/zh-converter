@@ -48,7 +48,10 @@ export type Question = {
   output: OutputState;
 };
 
+export type CoverStyle = "classic" | "bordered" | "framed" | "formal";
+
 export type CoverDetails = {
+  style: CoverStyle;
   university: string;
   campus: string;
   assignment: string;
@@ -63,6 +66,7 @@ export type CoverDetails = {
 };
 
 export const EMPTY_COVER: CoverDetails = {
+  style: "classic",
   university: "",
   campus: "",
   assignment: "",

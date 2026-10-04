@@ -3,7 +3,6 @@ import { ArrowRight, Check } from "lucide-react";
 import { Nav } from "@/components/nav";
 import { HeroAssembly } from "@/components/hero-assembly";
 import { Reveal } from "@/components/reveal";
-import { CoverPage, type CoverStyle } from "@/components/cover-page";
 import { LogoMark } from "@/components/logo";
 
 const STEPS = [
@@ -17,7 +16,7 @@ const STEPS = [
   },
   {
     title: "Add the question and its input",
-    body: "Paste each problem statement. If a program asks for input, type it once and we feed it in when it runs.",
+    body: "Paste each problem statement. If a program asks for input, we fill in sample values for you, or type your own.",
   },
   {
     title: "Download Word and PDF",
@@ -44,10 +43,34 @@ const LANGUAGES = [
   },
 ];
 
-const TEMPLATES: { style: CoverStyle; name: string; note: string }[] = [
-  { style: "classic", name: "Classic", note: "The layout most departments expect" },
-  { style: "framed", name: "Framed", note: "Classic with a double border" },
-  { style: "modern", name: "Modern", note: "For when you're allowed to have fun" },
+const PLANS = [
+  {
+    name: "Free",
+    note: "To try it on this week's lab",
+    price: "PKR 0",
+    per: "",
+    features: ["3 assignments", "All 22 languages", "Word and PDF downloads", "Classic cover page"],
+    cta: "Start free",
+    featured: false,
+  },
+  {
+    name: "Basic",
+    note: "For a light semester",
+    price: "PKR 100",
+    per: " / month",
+    features: ["15 assignments a month", "All 22 languages", "Every cover style", "Saved cover details"],
+    cta: "Choose Basic",
+    featured: false,
+  },
+  {
+    name: "Student",
+    note: "For the whole semester",
+    price: "PKR 300",
+    per: " / month",
+    features: ["Unlimited assignments", "Every cover style", "Faster code runs", "Priority support"],
+    cta: "Free during launch",
+    featured: true,
+  },
 ];
 
 export default function Home() {
@@ -56,7 +79,8 @@ export default function Home() {
       <Nav />
       <main>
         {/* Hero */}
-        <section className="relative overflow-hidden">
+        {/* Pulled up behind the floating nav (68px) so the glow isn't cut off under it. */}
+        <section className="relative -mt-[68px] overflow-hidden pt-[68px]">
           <div
             aria-hidden
             className="pointer-events-none absolute -right-40 -top-40 h-[620px] w-[620px] rounded-full bg-peach/25 blur-[120px] dark:bg-peach/10"
@@ -159,39 +183,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Templates */}
-        <section id="templates" className="scroll-mt-20">
-          <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
-            <Reveal>
-              <h2 className="max-w-2xl font-display text-4xl font-semibold tracking-tight sm:text-5xl">
-                A cover page that matches your department.
-              </h2>
-              <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted">
-                Upload your university logo once. Your name, registration number and section fill in on every
-                assignment after that.
-              </p>
-            </Reveal>
-            <div className="mt-14 grid gap-8 sm:grid-cols-3">
-              {TEMPLATES.map((template, i) => (
-                <Reveal key={template.style} delay={i * 0.1}>
-                  <figure className="group">
-                    <div
-                      data-cursor="grow"
-                      className="overflow-hidden rounded-lg shadow-[0_24px_50px_-28px_rgba(120,60,40,0.5),0_0_0_1px_rgba(36,26,30,0.06)] transition-transform duration-500 group-hover:-translate-y-2 group-hover:rotate-[-1deg]"
-                    >
-                      <CoverPage style={template.style} />
-                    </div>
-                    <figcaption className="mt-4">
-                      <span className="font-display text-lg font-semibold">{template.name}</span>
-                      <span className="block text-sm text-muted">{template.note}</span>
-                    </figcaption>
-                  </figure>
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
-
         {/* Pricing */}
         <section id="pricing" className="scroll-mt-20 border-t border-line">
           <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
@@ -200,62 +191,43 @@ export default function Home() {
                 Cheaper than one late submission.
               </h2>
             </Reveal>
-            <div className="mt-14 grid max-w-4xl gap-5 md:grid-cols-2">
-              <Reveal>
-                <div className="flex h-full flex-col rounded-2xl border border-line bg-surface p-8">
-                  <h3 className="font-display text-2xl font-semibold">Free</h3>
-                  <p className="mt-1 text-muted">To try it on this week&apos;s lab</p>
-                  <p className="mt-6 font-display text-5xl font-semibold tracking-tight">
-                    PKR 0
-                  </p>
-                  <ul className="mt-7 space-y-3">
-                    {["3 assignments", "All 22 languages", "Word and PDF downloads", "Classic cover page"].map(
-                      (item) => (
-                        <li key={item} className="flex items-center gap-2.5">
-                          <Check size={17} className="text-accent" /> {item}
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                  <Link
-                    href="/builder"
-                    className="mt-9 rounded-full border border-ink py-3 text-center font-medium transition-colors hover:bg-ink hover:text-paper"
-                  >
-                    Start free
-                  </Link>
-                </div>
-              </Reveal>
-              <Reveal delay={0.1}>
-                <div className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-ink p-8 text-paper">
+            <div className="mt-14 grid gap-5 md:grid-cols-3">
+              {PLANS.map((plan, i) => (
+                <Reveal key={plan.name} delay={i * 0.1}>
                   <div
-                    aria-hidden
-                    className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-peach/40 blur-3xl"
-                  />
-                  <h3 className="relative font-display text-2xl font-semibold">Student</h3>
-                  <p className="relative mt-1 opacity-70">For the whole semester</p>
-                  <p className="relative mt-6 font-display text-5xl font-semibold tracking-tight">
-                    PKR 300<span className="text-lg font-normal opacity-60"> / month</span>
-                  </p>
-                  <ul className="relative mt-7 space-y-3">
-                    {[
-                      "Unlimited assignments",
-                      "Every cover template",
-                      "Saved cover details",
-                      "Faster C, C++ and Java runs",
-                    ].map((item) => (
-                      <li key={item} className="flex items-center gap-2.5">
-                        <Check size={17} className="text-peach" /> {item}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href="/builder"
-                    className="relative mt-9 rounded-full bg-peach py-3 text-center font-medium text-[#241a1e] transition-transform hover:-translate-y-0.5"
+                    className={`relative flex h-full flex-col overflow-hidden rounded-2xl p-8 transition-transform duration-300 hover:-translate-y-1 ${
+                      plan.featured ? "bg-ink text-paper" : "border border-line bg-surface"
+                    }`}
                   >
-                    Free during launch
-                  </Link>
-                </div>
-              </Reveal>
+                    {plan.featured && (
+                      <div aria-hidden className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-peach/40 blur-3xl" />
+                    )}
+                    <h3 className="relative font-display text-2xl font-semibold">{plan.name}</h3>
+                    <p className={`relative mt-1 ${plan.featured ? "opacity-70" : "text-muted"}`}>{plan.note}</p>
+                    <p className="relative mt-6 font-display text-5xl font-semibold tracking-tight">
+                      {plan.price}
+                      {plan.per && <span className="text-lg font-normal opacity-60">{plan.per}</span>}
+                    </p>
+                    <ul className="relative mb-9 mt-7 space-y-3">
+                      {plan.features.map((item) => (
+                        <li key={item} className="flex items-center gap-2.5">
+                          <Check size={17} className={plan.featured ? "text-peach" : "text-accent"} /> {item}
+                        </li>
+                      ))}
+                    </ul>
+                    <Link
+                      href="/builder"
+                      className={`relative mt-auto rounded-full py-3 text-center font-medium transition ${
+                        plan.featured
+                          ? "bg-peach text-[#241a1e] hover:-translate-y-0.5"
+                          : "border border-ink hover:bg-ink hover:text-paper"
+                      }`}
+                    >
+                      {plan.cta}
+                    </Link>
+                  </div>
+                </Reveal>
+              ))}
             </div>
           </div>
         </section>

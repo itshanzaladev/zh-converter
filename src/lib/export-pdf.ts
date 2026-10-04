@@ -1,6 +1,8 @@
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
 import { coverRows, expandTabs, type AssignmentDoc } from "./assignment";
+import { coverSpec, coverTitle } from "./cover-styles";
 import { dataUrlToBytes } from "./images";
+import type { CoverDetails } from "./types";
 
 const PAGE: [number, number] = [595.28, 841.89];
 const MARGIN = 56;
@@ -166,6 +168,80 @@ class Writer {
   }
 }
 
+/** Distance of the cover border from the page edge; the page number sits just below it. */
+const BORDER_INSET = 46;
+
+/**
+ * Cover page: everything centred. The logo (or the university name without
+ * one), the assignment and subject, then the student's details. The cover
+ * style adds a border, capitals, a rule or a details table.
+ */
+async function drawCover(w: Writer, cover: CoverDetails) {
+  const spec = coverSpec(cover);
+  const title = coverTitle(cover);
+  w.newPage();
+
+  const frame = (inset: number, thickness: number) =>
+    w.page.drawRectangle({
+      x: inset,
+      y: inset,
+      width: PAGE[0] - inset * 2,
+      height: PAGE[1] - inset * 2,
+      borderColor: ink,
+      borderWidth: thickness,
+    });
+  if (spec.border === "single") frame(BORDER_INSET, 1.2);
+  if (spec.border === "double") {
+    frame(BORDER_INSET, 0.8);
+    frame(BORDER_INSET + 4, 0.8);
+  }
+  if (spec.border === "thick") frame(BORDER_INSET, 3);
+
+  if (cover.logo) await w.image(cover.logo, 180, true, 165);
+  if (!cover.logo || spec.universityLine) {
+    if (cover.logo) w.y -= 8;
+    if (cover.university) w.centered(cover.university.toUpperCase(), w.fonts.bold, 16);
+    if (cover.campus) w.centered(cover.campus, w.fonts.bold, 12);
+  }
+  w.y -= 18;
+  if (title.big) w.centered(title.big, w.fonts.bold, 22);
+  if (title.small) w.centered(title.small, w.fonts.bold, 12);
+
+  if (spec.divider) {
+    w.y -= 26;
+    w.page.drawLine({ start: { x: PAGE[0] / 2 - 80, y: w.y }, end: { x: PAGE[0] / 2 + 80, y: w.y }, thickness: 0.8, color: ink });
+  }
+
+  w.y = Math.min(w.y - (spec.divider ? 50 : 70), 470);
+  const rows = coverRows(cover);
+  if (spec.details === "table") {
+    const size = 13;
+    const left = PAGE[0] / 2 - 175;
+    const right = PAGE[0] / 2 + 175;
+    const valueX = PAGE[0] / 2 - 15;
+    const rule = (y: number) => w.page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness: 0.5, color: muted });
+    rule(w.y + size + 8);
+    for (const [label, value] of rows) {
+      w.page.drawText(safe(label), { x: left + 8, y: w.y, size, font: w.fonts.bold, color: ink });
+      w.page.drawText(safe(value), { x: valueX, y: w.y, size, font: w.fonts.regular, color: ink });
+      rule(w.y - 10);
+      w.y -= size + 18;
+    }
+    return;
+  }
+  for (const [label, value] of rows) {
+    const size = 19;
+    const labelText = `${label}:`;
+    const valueText = safe(value);
+    // A fixed gap rather than a trailing space, whose width varies between PDF viewers.
+    const labelWidth = w.fonts.bold.widthOfTextAtSize(labelText, size) + size * 0.3;
+    const x = (PAGE[0] - labelWidth - w.fonts.regular.widthOfTextAtSize(valueText, size)) / 2;
+    w.page.drawText(labelText, { x, y: w.y, size, font: w.fonts.bold, color: ink });
+    w.page.drawText(valueText, { x: x + labelWidth, y: w.y, size, font: w.fonts.regular, color: ink });
+    w.y -= 32;
+  }
+}
+
 export async function buildPdf(doc: AssignmentDoc) {
   const pdf = await PDFDocument.create();
   pdf.setTitle([doc.cover.subject, doc.cover.assignment].filter(Boolean).join(" ") || "Assignment");
@@ -177,32 +253,7 @@ export async function buildPdf(doc: AssignmentDoc) {
     mono: await pdf.embedFont(StandardFonts.Courier),
   });
 
-  // Cover page: everything centred. The logo (or the university name without
-  // one), the assignment and subject, then the student's details.
-  const { cover } = doc;
-  w.newPage();
-  if (cover.logo) {
-    await w.image(cover.logo, 180, true, 165);
-  } else {
-    if (cover.university) w.centered(cover.university.toUpperCase(), w.fonts.bold, 16);
-    if (cover.campus) w.centered(cover.campus, w.fonts.bold, 12);
-  }
-  w.y -= 18;
-  if (cover.assignment) w.centered(cover.assignment, w.fonts.bold, 22);
-  if (cover.subject) w.centered(cover.subject, w.fonts.bold, 12);
-
-  w.y = Math.min(w.y - 70, 470);
-  for (const [label, value] of coverRows(cover)) {
-    const size = 19;
-    const labelText = `${label}:`;
-    const valueText = safe(value);
-    // A fixed gap rather than a trailing space, whose width varies between PDF viewers.
-    const labelWidth = w.fonts.bold.widthOfTextAtSize(labelText, size) + size * 0.3;
-    const x = (PAGE[0] - labelWidth - w.fonts.regular.widthOfTextAtSize(valueText, size)) / 2;
-    w.page.drawText(labelText, { x, y: w.y, size, font: w.fonts.bold, color: ink });
-    w.page.drawText(valueText, { x: x + labelWidth, y: w.y, size, font: w.fonts.regular, color: ink });
-    w.y -= 32;
-  }
+  await drawCover(w, doc.cover);
 
   for (const question of doc.questions) {
     w.newPage();

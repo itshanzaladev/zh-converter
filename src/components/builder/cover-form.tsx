@@ -2,10 +2,12 @@
 
 import { useRef } from "react";
 import { ImagePlus, X } from "lucide-react";
-import type { CoverDetails } from "@/lib/types";
+import type { CoverDetails, CoverStyle } from "@/lib/types";
+import { COVER_STYLES } from "@/lib/cover-styles";
 import { toPng } from "@/lib/images";
+import { CoverPage, withPlaceholders } from "@/components/cover-page";
 
-const FIELDS: { key: Exclude<keyof CoverDetails, "logo">; label: string; placeholder: string; wide?: boolean }[] = [
+const FIELDS: { key: Exclude<keyof CoverDetails, "logo" | "style">; label: string; placeholder: string; wide?: boolean }[] = [
   { key: "university", label: "University", placeholder: "COMSATS University", wide: true },
   { key: "campus", label: "Campus", placeholder: "Wah Campus" },
   { key: "assignment", label: "Assignment", placeholder: "Assignment #03" },
@@ -43,6 +45,35 @@ export function CoverForm({
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
+      <fieldset className="sm:col-span-2">
+        <legend className="mb-2 text-sm font-medium">Cover style</legend>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {(Object.keys(COVER_STYLES) as CoverStyle[]).map((style) => {
+            const selected = cover.style === style;
+            return (
+              <button
+                key={style}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onChange({ ...cover, style })}
+                className={`rounded-xl border p-2.5 text-left transition-colors ${
+                  selected ? "border-peach-strong bg-blush/60 ring-2 ring-peach/40" : "border-line hover:bg-blush/40"
+                }`}
+              >
+                {/* The 260px preview, shrunk to a thumbnail. */}
+                <div className="mx-auto h-[147px] w-[104px] overflow-hidden rounded-sm shadow-sm ring-1 ring-black/5">
+                  <div className="origin-top-left scale-[0.4]">
+                    <CoverPage cover={withPlaceholders({ ...cover, style })} />
+                  </div>
+                </div>
+                <span className="mt-2 block text-sm font-medium">{COVER_STYLES[style].name}</span>
+                <span className="block text-xs text-muted">{COVER_STYLES[style].note}</span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
       <div className="flex items-center gap-4 sm:col-span-2">
         <button
           type="button"

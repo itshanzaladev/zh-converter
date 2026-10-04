@@ -6,6 +6,8 @@ import {
   HeadingLevel,
   ImageRun,
   Packer,
+  PageBorderDisplay,
+  PageBorderOffsetFrom,
   PageNumber,
   Paragraph,
   ShadingType,
@@ -16,6 +18,7 @@ import {
   WidthType,
 } from "docx";
 import { coverRows, expandTabs, type AssignmentDoc } from "./assignment";
+import { coverSpec, coverTitle, type CoverSpec } from "./cover-styles";
 import { dataUrlToBytes, imageSize } from "./images";
 
 /** A4 with 1" margins leaves ~6.27" of width; at 96 dpi that's ~600px. */
@@ -60,31 +63,94 @@ const pageFooter = () =>
     ],
   });
 
+/** Page border for the cover, in Word's units (size in eighths of a point). */
+function coverBorders(border: CoverSpec["border"]) {
+  if (border === "none") return undefined;
+  const side = {
+    single: { style: BorderStyle.SINGLE, size: 12 },
+    double: { style: BorderStyle.DOUBLE, size: 6 },
+    thick: { style: BorderStyle.SINGLE, size: 30 },
+  }[border];
+  const edge = { ...side, color: "000000", space: 24 };
+  return {
+    pageBorders: { display: PageBorderDisplay.ALL_PAGES, offsetFrom: PageBorderOffsetFrom.PAGE },
+    pageBorderTop: edge,
+    pageBorderRight: edge,
+    pageBorderBottom: edge,
+    pageBorderLeft: edge,
+  };
+}
+
 /**
  * Everything centred: the logo, the assignment and subject, then the
- * student's details as "Label: value" lines. Without a logo, the university
- * name takes its place.
+ * student's details. Without a logo, the university name takes its place.
+ * The cover style adds a border, capitals, a rule or a details table.
  */
 async function coverSection(doc: AssignmentDoc) {
   const { cover } = doc;
+  const spec = coverSpec(cover);
+  const title = coverTitle(cover);
   const center = (runs: TextRun[], before: number, after: number) =>
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before, after }, children: runs });
   const run = (text: string, size: number, bold = true) => new TextRun({ text, bold, size, font: COVER_FONT });
 
-  const children: Paragraph[] = [];
-  if (cover.logo) {
-    children.push(await imageParagraph(cover.logo, 240, 220));
-  } else {
-    if (cover.university) children.push(center([run(cover.university.toUpperCase(), 32)], 0, 60));
+  const children: (Paragraph | Table)[] = [];
+  if (cover.logo) children.push(await imageParagraph(cover.logo, 240, 220));
+  if (!cover.logo || spec.universityLine) {
+    if (cover.university) children.push(center([run(cover.university.toUpperCase(), 32)], cover.logo ? 160 : 0, 60));
     if (cover.campus) children.push(center([run(cover.campus, 24)], 0, 60));
   }
-  if (cover.assignment) children.push(center([run(cover.assignment, 44)], 360, 40));
-  if (cover.subject) children.push(center([run(cover.subject, 24)], cover.assignment ? 0 : 360, 0));
+  if (title.big) children.push(center([run(title.big, 44)], 360, 40));
+  if (title.small) children.push(center([run(title.small, 24)], title.big ? 0 : 360, 0));
+  if (spec.divider) {
+    children.push(
+      new Paragraph({
+        spacing: { before: 480 },
+        indent: { left: 3200, right: 3200 },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: "000000", space: 1 } },
+        children: [],
+      }),
+    );
+  }
 
-  coverRows(cover).forEach(([label, value], i) => {
-    children.push(center([run(`${label}: `, 38), run(value, 38, false)], i === 0 ? 1700 : 0, 160));
-  });
-  return { properties: {}, footers: { default: pageFooter() }, children };
+  const rows = coverRows(cover);
+  const gap = spec.divider ? 1100 : 1700;
+  if (spec.details === "table") {
+    const line = { style: BorderStyle.SINGLE, size: 4, color: "BFBFBF" };
+    const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+    children.push(new Paragraph({ spacing: { before: gap }, children: [] }));
+    children.push(
+      new Table({
+        alignment: AlignmentType.CENTER,
+        width: { size: 78, type: WidthType.PERCENTAGE },
+        borders: { top: line, bottom: line, left: none, right: none, insideHorizontal: line, insideVertical: none },
+        rows: rows.map(
+          ([label, value]) =>
+            new TableRow({
+              children: [
+                new TableCell({
+                  width: { size: 45, type: WidthType.PERCENTAGE },
+                  margins: { top: 100, bottom: 100, left: 120, right: 120 },
+                  children: [new Paragraph({ children: [run(label, 26)] })],
+                }),
+                new TableCell({
+                  width: { size: 55, type: WidthType.PERCENTAGE },
+                  margins: { top: 100, bottom: 100, left: 120, right: 120 },
+                  children: [new Paragraph({ children: [run(value, 26, false)] })],
+                }),
+              ],
+            }),
+        ),
+      }),
+    );
+  } else {
+    rows.forEach(([label, value], i) => {
+      children.push(center([run(`${label}: `, 38), run(value, 38, false)], i === 0 ? gap : 0, 160));
+    });
+  }
+
+  const borders = coverBorders(spec.border);
+  return { properties: borders ? { page: { borders } } : {}, footers: { default: pageFooter() }, children };
 }
 
 function codeBlock(content: string) {

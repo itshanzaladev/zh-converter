@@ -2,18 +2,24 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { Logo } from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 
 const LINKS = [
   { href: "/#how", label: "How it works" },
   { href: "/#languages", label: "Languages" },
-  { href: "/#templates", label: "Templates" },
   { href: "/#pricing", label: "Pricing" },
 ];
 
+/**
+ * A floating pill ("dynamic island"): drops in on load and tightens a little
+ * once the page scrolls.
+ */
 export function Nav() {
   const [scrolled, setScrolled] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
     onScroll();
@@ -22,23 +28,41 @@ export function Nav() {
   }, []);
 
   return (
-    <header
-      className={`sticky top-0 z-50 transition-[background-color,border-color,backdrop-filter] duration-300 ${
-        scrolled ? "border-b border-line bg-paper/80 backdrop-blur-md" : "border-b border-transparent"
-      }`}
-    >
-      <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+    <header className="pointer-events-none sticky top-3 z-50 mt-3 flex justify-center px-3">
+      <motion.nav
+        initial={{ y: -28, opacity: 0, scale: 0.96 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        transition={{ type: "spring", stiffness: 260, damping: 24 }}
+        className={`pointer-events-auto relative flex h-14 w-full items-center justify-between overflow-hidden rounded-full border pl-5 pr-2 backdrop-blur-xl transition-[width,background-color,box-shadow,border-color] duration-500 ease-out ${
+          scrolled
+            ? "border-line bg-paper/85 shadow-[0_12px_40px_-12px_rgba(120,60,40,0.35)] md:w-[76%]"
+            : "border-line/70 bg-paper/60 shadow-[0_8px_30px_-16px_rgba(120,60,40,0.25)] md:w-[80%]"
+        }`}
+      >
         <Logo />
-        <ul className="hidden items-center gap-8 text-[15px] text-muted md:flex">
+
+        <ul className="hidden items-center gap-1 text-[15px] text-muted md:flex" onMouseLeave={() => setHovered(null)}>
           {LINKS.map((link) => (
-            <li key={link.href}>
-              <a href={link.href} className="transition-colors hover:text-ink">
+            <li key={link.href} className="relative">
+              {hovered === link.href && (
+                <motion.span
+                  layoutId="nav-hover"
+                  className="absolute inset-0 rounded-full bg-blush"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+              <a
+                href={link.href}
+                onMouseEnter={() => setHovered(link.href)}
+                className="relative block rounded-full px-4 py-2 transition-colors hover:text-ink"
+              >
                 {link.label}
               </a>
             </li>
           ))}
         </ul>
-        <div className="flex items-center gap-2.5">
+
+        <div className="flex items-center gap-2">
           <ThemeToggle />
           <Link
             href="/builder"
@@ -48,7 +72,7 @@ export function Nav() {
             <span className="hidden sm:inline">Start an assignment</span>
           </Link>
         </div>
-      </nav>
+      </motion.nav>
     </header>
   );
 }

@@ -1,3 +1,4 @@
+import { coverSpec } from "./cover-styles";
 import type { CodeFile, CoverDetails, OutputState } from "./types";
 
 /** Everything an exporter needs, already grouped and ordered. */
@@ -21,14 +22,16 @@ export function assignmentFilename(cover: CoverDetails, ext: "docx" | "pdf") {
   return `${base || "assignment"}.${ext}`;
 }
 
+/** The student's details as [label, value], labelled the way the cover style labels them. */
 export function coverRows(cover: CoverDetails): [string, string][] {
+  const { labels } = coverSpec(cover);
   return (
     [
-      ["Name", cover.name],
-      ["Registration No", cover.regNo],
-      ["Section", cover.section],
-      ["Submitted To", cover.instructor],
-      ["Date", cover.date],
+      [labels.name, cover.name],
+      [labels.regNo, cover.regNo],
+      [labels.section, cover.section],
+      [labels.instructor, cover.instructor],
+      [labels.date, cover.date],
     ] as [string, string][]
   ).filter(([, value]) => value.trim());
 }
