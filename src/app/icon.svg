@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Same mark as LogoMark in src/components/logo.tsx, with the theme colours written out. -->
+  <path d="M6 3h14l7 7v17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="#f5a07f"/>
+  <path d="M20 3v5a2 2 0 0 0 2 2h5Z" fill="#e9805a"/>
+  <text x="15.5" y="23" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-weight="700" font-size="10" fill="#241a1e">ZH</text>
+</svg>
