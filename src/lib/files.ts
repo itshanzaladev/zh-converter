@@ -14,6 +14,21 @@ const EXTENSIONS: Record<string, Language> = {
   h: "c",
   hpp: "cpp",
   java: "java",
+  cs: "csharp",
+  dart: "dart",
+  kt: "kotlin",
+  php: "php",
+  go: "go",
+  ts: "typescript",
+  rb: "ruby",
+  rs: "rust",
+  swift: "swift",
+  r: "r",
+  sql: "sql",
+  sh: "bash",
+  m: "octave",
+  vb: "vb",
+  hs: "haskell",
 };
 
 export const ACCEPT = Object.keys(EXTENSIONS)
@@ -28,10 +43,22 @@ export const LANGUAGE_LABEL: Record<Language, string> = {
   c: "C",
   cpp: "C++",
   java: "Java",
+  csharp: "C#",
+  dart: "Dart",
+  kotlin: "Kotlin",
+  php: "PHP",
+  go: "Go",
+  typescript: "TypeScript",
+  ruby: "Ruby",
+  rust: "Rust",
+  swift: "Swift",
+  r: "R",
+  sql: "SQL",
+  bash: "Bash",
+  octave: "MATLAB / Octave",
+  vb: "VB.NET",
+  haskell: "Haskell",
 };
-
-/** Languages whose output is a screenshot of a rendered page. */
-export const WEB_LANGUAGES: Language[] = ["html", "css", "js"];
 
 export const MAX_FILE_BYTES = 512 * 1024;
 
@@ -72,7 +99,9 @@ export function detectQuestion(filename: string): { certain: number | null; sugg
 export async function readCodeFile(file: File): Promise<CodeFile> {
   const language = languageOf(file.name);
   if (!language) {
-    throw new Error(`${file.name} isn't a code file ZH Converter can read. Use .html, .css, .js, .py, .c, .cpp or .java.`);
+    throw new Error(
+      `${file.name} isn't a code file ZH Converter can read. Supported: ${[...new Set(Object.values(LANGUAGE_LABEL))].join(", ")}.`,
+    );
   }
   if (file.size > MAX_FILE_BYTES) {
     throw new Error(`${file.name} is larger than 512 KB. Split it or remove generated code.`);
@@ -90,7 +119,8 @@ export async function readCodeFile(file: File): Promise<CodeFile> {
 
 /** HTML first, then CSS, then JS, then everything else, alphabetically within each. */
 export function sortFiles(files: CodeFile[]) {
-  const order: Language[] = ["html", "css", "js", "python", "c", "cpp", "java"];
+  // The order LANGUAGE_LABEL lists them in: HTML, CSS, JS first.
+  const order = Object.keys(LANGUAGE_LABEL) as Language[];
   return [...files].sort(
     (a, b) => order.indexOf(a.language) - order.indexOf(b.language) || a.name.localeCompare(b.name),
   );

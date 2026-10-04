@@ -47,38 +47,44 @@ async function imageParagraph(
   });
 }
 
+const COVER_FONT = "Arial";
+
+/** Page number centred at the bottom of every page, the cover included. */
+const pageFooter = () =>
+  new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ children: [PageNumber.CURRENT], size: 18, color: "9A8A8E" })],
+      }),
+    ],
+  });
+
+/**
+ * Everything centred: the logo, the assignment and subject, then the
+ * student's details as "Label: value" lines. Without a logo, the university
+ * name takes its place.
+ */
 async function coverSection(doc: AssignmentDoc) {
   const { cover } = doc;
-  const center = (text: string, size: number, color = "000000", before = 120) =>
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { before, after: 60 },
-      children: [new TextRun({ text, bold: true, size, color })],
-    });
+  const center = (runs: TextRun[], before: number, after: number) =>
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before, after }, children: runs });
+  const run = (text: string, size: number, bold = true) => new TextRun({ text, bold, size, font: COVER_FONT });
 
   const children: Paragraph[] = [];
-  if (cover.university) children.push(center(cover.university.toUpperCase(), 30, "2B4C8C", 0));
   if (cover.logo) {
-    children.push(new Paragraph({ spacing: { before: 240 }, children: [] }));
-    children.push(await imageParagraph(cover.logo, 200, 200));
+    children.push(await imageParagraph(cover.logo, 240, 220));
+  } else {
+    if (cover.university) children.push(center([run(cover.university.toUpperCase(), 32)], 0, 60));
+    if (cover.campus) children.push(center([run(cover.campus, 24)], 0, 60));
   }
-  children.push(new Paragraph({ spacing: { before: 360 }, children: [] }));
-  for (const line of [cover.campus, cover.assignment, cover.subject]) {
-    if (line) children.push(center(line.toUpperCase(), 28));
-  }
-  children.push(new Paragraph({ spacing: { before: 1400 }, children: [] }));
-  for (const [label, value] of coverRows(cover)) {
-    children.push(
-      new Paragraph({
-        spacing: { after: 200 },
-        children: [
-          new TextRun({ text: `${label}: `, bold: true, size: 26 }),
-          new TextRun({ text: value, size: 26 }),
-        ],
-      }),
-    );
-  }
-  return { properties: {}, children };
+  if (cover.assignment) children.push(center([run(cover.assignment, 44)], 360, 40));
+  if (cover.subject) children.push(center([run(cover.subject, 24)], cover.assignment ? 0 : 360, 0));
+
+  coverRows(cover).forEach(([label, value], i) => {
+    children.push(center([run(`${label}: `, 38), run(value, 38, false)], i === 0 ? 1700 : 0, 160));
+  });
+  return { properties: {}, footers: { default: pageFooter() }, children };
 }
 
 function codeBlock(content: string) {
@@ -160,21 +166,8 @@ async function questionsSection(doc: AssignmentDoc) {
     }
   }
 
-  return {
-    // Numbering restarts after the cover, so the first question is page 1.
-    properties: { page: { pageNumbers: { start: 1 } } },
-    footers: {
-      default: new Footer({
-        children: [
-          new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [new TextRun({ children: ["Page ", PageNumber.CURRENT], size: 18, color: "9A8A8E" })],
-          }),
-        ],
-      }),
-    },
-    children,
-  };
+  // Numbering continues from the cover, which is page 1.
+  return { properties: {}, footers: { default: pageFooter() }, children };
 }
 
 export async function buildDocx(doc: AssignmentDoc) {

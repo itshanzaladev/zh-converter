@@ -33,6 +33,15 @@ const LANGUAGES = [
   { name: "C", ext: ".c", how: "Terminal output" },
   { name: "C++", ext: ".cpp", how: "Terminal output" },
   { name: "Java", ext: ".java", how: "Terminal output" },
+  { name: "C#", ext: ".cs", how: "Terminal output" },
+  { name: "Dart", ext: ".dart", how: "Terminal output" },
+  { name: "Kotlin", ext: ".kt", how: "Terminal output" },
+  { name: "PHP", ext: ".php", how: "Page or terminal" },
+  {
+    name: "And more",
+    ext: "+11",
+    how: "SQL, Go, Rust, Ruby, Swift, R, TypeScript, Bash, MATLAB, VB.NET, Haskell",
+  },
 ];
 
 const TEMPLATES: { style: CoverStyle; name: string; note: string }[] = [
@@ -200,7 +209,7 @@ export default function Home() {
                     PKR 0
                   </p>
                   <ul className="mt-7 space-y-3">
-                    {["3 assignments", "All 7 languages", "Word and PDF downloads", "Classic cover page"].map(
+                    {["3 assignments", "All 22 languages", "Word and PDF downloads", "Classic cover page"].map(
                       (item) => (
                         <li key={item} className="flex items-center gap-2.5">
                           <Check size={17} className="text-accent" /> {item}

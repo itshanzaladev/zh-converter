@@ -2,9 +2,10 @@
 
 import { useRef } from "react";
 import { motion } from "framer-motion";
-import { ImageUp, Loader2, RotateCw, X } from "lucide-react";
+import { ImageUp, Loader2, Play, RotateCw, X } from "lucide-react";
 import type { CodeFile, Question } from "@/lib/types";
-import { LANGUAGE_LABEL, WEB_LANGUAGES } from "@/lib/files";
+import { LANGUAGE_LABEL } from "@/lib/files";
+import { planOutput, readsInput } from "@/lib/programs";
 import { toPng } from "@/lib/images";
 import { inputClass } from "./cover-form";
 
@@ -28,8 +29,10 @@ export function QuestionCard({
   onError: (message: string) => void;
 }) {
   const upload = useRef<HTMLInputElement>(null);
-  const isWeb = files.some((f) => WEB_LANGUAGES.includes(f.language));
-  const needsRunner = files.some((f) => !WEB_LANGUAGES.includes(f.language));
+  const plan = planOutput(files);
+  const isWeb = plan.kind === "web";
+  const isConsole = plan.kind === "console";
+  const needsInput = plan.kind === "console" && readsInput(plan.programs);
   const { output } = question;
 
   async function uploadScreenshot(file: File | undefined) {
@@ -95,15 +98,24 @@ export function QuestionCard({
         ))}
       </ul>
 
-      {needsRunner && (
+      {isConsole && (
         <label className="mt-5 block">
-          <span className="mb-1.5 block text-sm font-medium">Program input (stdin)</span>
+          <span className="mb-1.5 block text-sm font-medium">
+            Program input (stdin)
+            {needsInput && (
+              <span className="font-normal text-muted">
+                {question.stdinIsSample
+                  ? " · sample input we filled in. Change it and press Run again if you like."
+                  : " · this program asks for input. Leave it empty and we'll fill in sample input."}
+              </span>
+            )}
+          </span>
           <textarea
             rows={2}
             className={`${inputClass} resize-y font-mono text-sm`}
             placeholder={"One value per line, e.g.\n5"}
             value={question.stdin}
-            onChange={(e) => onChange({ ...question, stdin: e.target.value })}
+            onChange={(e) => onChange({ ...question, stdin: e.target.value, stdinIsSample: false })}
           />
         </label>
       )}
@@ -119,6 +131,17 @@ export function QuestionCard({
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-accent hover:bg-blush disabled:opacity-50"
             >
               <RotateCw size={14} /> Take screenshot again
+            </button>
+          )}
+          {isConsole && (
+            <button
+              type="button"
+              onClick={onRun}
+              disabled={output.status === "running"}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-accent hover:bg-blush disabled:opacity-50"
+            >
+              {output.status === "idle" ? <Play size={14} /> : <RotateCw size={14} />}
+              {output.status === "idle" ? "Run" : "Run again"}
             </button>
           )}
           <button
@@ -144,7 +167,8 @@ export function QuestionCard({
       <div className="mt-2 overflow-hidden rounded-xl border border-line bg-paper">
         {output.status === "running" && (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted">
-            <Loader2 size={16} className="animate-spin" /> Opening the page and taking a screenshot…
+            <Loader2 size={16} className="animate-spin" />
+            {isConsole ? "Running the program…" : "Opening the page and taking a screenshot…"}
           </div>
         )}
         {output.status === "done" && (
@@ -156,12 +180,22 @@ export function QuestionCard({
             className="max-h-[420px] w-full object-contain object-top"
           />
         )}
-        {output.status === "error" && <p className="px-4 py-8 text-center text-sm text-accent">{output.message}</p>}
+        {output.status === "error" &&
+          (isConsole ? (
+            // Compiler messages keep their line breaks and columns.
+            <pre className="overflow-x-auto whitespace-pre-wrap px-4 py-5 font-mono text-xs leading-relaxed text-accent">
+              {output.message}
+            </pre>
+          ) : (
+            <p className="px-4 py-8 text-center text-sm text-accent">{output.message}</p>
+          ))}
         {output.status === "idle" && (
           <p className="px-4 py-8 text-center text-sm text-muted">
-            {needsRunner && !isWeb
-              ? "Running Python, C, C++ and Java is coming next. For now, add a screenshot of the output."
-              : "The screenshot appears here."}
+            {plan.kind === "none"
+              ? "Flutter apps run on a phone or emulator, so they can't be run here. Add a screenshot of the app."
+              : isConsole
+                ? "Press Run to run the program."
+                : "The screenshot appears here."}
           </p>
         )}
       </div>

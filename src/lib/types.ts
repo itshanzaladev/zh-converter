@@ -1,4 +1,26 @@
-export type Language = "html" | "css" | "js" | "python" | "c" | "cpp" | "java";
+export type Language =
+  | "html"
+  | "css"
+  | "js"
+  | "python"
+  | "c"
+  | "cpp"
+  | "java"
+  | "csharp"
+  | "dart"
+  | "kotlin"
+  | "php"
+  | "go"
+  | "typescript"
+  | "ruby"
+  | "rust"
+  | "swift"
+  | "r"
+  | "sql"
+  | "bash"
+  | "octave"
+  | "vb"
+  | "haskell";
 
 export type CodeFile = {
   id: string;
@@ -21,6 +43,8 @@ export type Question = {
   number: number;
   statement: string;
   stdin: string;
+  /** True while `stdin` is the sample input ZH Converter filled in, not the student's own. */
+  stdinIsSample?: boolean;
   output: OutputState;
 };
 

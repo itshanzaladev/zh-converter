@@ -24,9 +24,9 @@ export function assignmentFilename(cover: CoverDetails, ext: "docx" | "pdf") {
 export function coverRows(cover: CoverDetails): [string, string][] {
   return (
     [
-      ["Submitted By", cover.name],
+      ["Name", cover.name],
       ["Registration No", cover.regNo],
-      ["Class/Section", cover.section],
+      ["Section", cover.section],
       ["Submitted To", cover.instructor],
       ["Date", cover.date],
     ] as [string, string][]

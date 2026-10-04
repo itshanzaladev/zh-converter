@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FileDown, Loader2, X } from "lucide-react";
-import type { CodeFile, CoverDetails, Question } from "@/lib/types";
+import type { CodeFile, CoverDetails, OutputState, Question } from "@/lib/types";
 import { EMPTY_COVER } from "@/lib/types";
-import { readCodeFile, sortFiles, WEB_LANGUAGES } from "@/lib/files";
+import { readCodeFile, sortFiles } from "@/lib/files";
+import { planOutput, readsInput, sampleInput } from "@/lib/programs";
 import { captureWebOutput } from "@/lib/render-web";
+import { captureConsoleOutput } from "@/lib/render-console";
 import { assignmentFilename, type AssignmentDoc } from "@/lib/assignment";
 import { downloadBlob } from "@/lib/images";
 import { CoverPage } from "@/components/cover-page";
@@ -68,27 +70,50 @@ export default function Builder() {
     setQuestions((all) => ({ ...all, [question.number]: question }));
   }
 
-  async function runQuestion(number: number, list: CodeFile[]) {
+  async function runQuestion(number: number, list: CodeFile[], stdin = getQuestion(number).stdin) {
     const questionFiles = filesFor(number, list);
-    if (!questionFiles.some((f) => WEB_LANGUAGES.includes(f.language))) return;
-    setQuestions((all) => ({ ...all, [number]: { ...(all[number] ?? blankQuestion(number)), output: { status: "running" } } }));
+    const plan = planOutput(questionFiles);
+    const setOutput = (output: OutputState) =>
+      setQuestions((all) => ({ ...all, [number]: { ...(all[number] ?? blankQuestion(number)), output } }));
+
+    // Nothing to run (a Flutter app): the card asks for a screenshot.
+    if (plan.kind === "none") {
+      setOutput({ status: "idle" });
+      return;
+    }
+
+    // A program that reads input and has none gets sample input, shown on the
+    // card so the student can change it. Sample input is remade every run, so
+    // it follows the files when they change.
+    const ownInput = stdin.trim() && !getQuestion(number).stdinIsSample;
+    let inputLimit: number | undefined;
+    if (plan.kind === "console" && readsInput(plan.programs) && !ownInput) {
+      const sample = sampleInput(plan.programs);
+      stdin = sample.text;
+      inputLimit = sample.reads;
+      setQuestions((all) => ({
+        ...all,
+        [number]: { ...(all[number] ?? blankQuestion(number)), stdin: sample.text, stdinIsSample: true },
+      }));
+    }
+
+    setOutput({ status: "running" });
     try {
-      const shot = await captureWebOutput(questionFiles);
-      setQuestions((all) => ({
-        ...all,
-        [number]: { ...(all[number] ?? blankQuestion(number)), output: { status: "done", source: "auto", ...shot } },
-      }));
+      const shot =
+        plan.kind === "web"
+          ? await captureWebOutput(questionFiles)
+          : await captureConsoleOutput(plan.programs, stdin, plan.assets, inputLimit);
+      setOutput({ status: "done", source: "auto", ...shot });
     } catch (error) {
-      setQuestions((all) => ({
-        ...all,
-        [number]: {
-          ...(all[number] ?? blankQuestion(number)),
-          output: {
-            status: "error",
-            message: `${error instanceof Error ? error.message : "The screenshot failed."} Try again or use your own screenshot.`,
-          },
-        },
-      }));
+      setOutput({
+        status: "error",
+        message:
+          plan.kind === "web"
+            ? `${error instanceof Error ? error.message : "The screenshot failed."} Try again or use your own screenshot.`
+            : error instanceof Error
+              ? error.message
+              : "The program couldn't be run. Try again or use your own screenshot.",
+      });
     }
   }
 

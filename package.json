@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "docx": "^9.8.1",
+    "fflate": "^0.8.3",
     "framer-motion": "^14.0.0",
     "lucide-react": "^1.51.0",
     "modern-screenshot": "^4.7.0",

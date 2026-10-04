@@ -50,10 +50,10 @@ export function CoverPage({
   logo?: string | null;
 }) {
   const rows: [string, string][] = [
-    ["Submitted by", details.name],
-    ["Registration no", details.regNo],
-    ["Class / section", details.section],
-    ["Submitted to", details.instructor],
+    ["Name", details.name],
+    ["Registration No", details.regNo],
+    ["Section", details.section],
+    ["Submitted To", details.instructor],
     ["Date", details.date],
   ];
 
@@ -83,32 +83,34 @@ export function CoverPage({
     );
   }
 
+  // Same layout as the Word and PDF cover: all centred, logo on top. An
+  // assignment without a logo (logo === null) shows the university name instead.
   return (
-    <div className="aspect-[1/1.414] bg-white p-3 text-[#241a1e]">
+    <div className="aspect-[1/1.414] bg-white p-3 font-[Arial,Helvetica,sans-serif] text-black">
       <div
-        className={`flex h-full flex-col px-3 py-4 ${
+        className={`flex h-full flex-col items-center px-3 pt-4 text-center ${
           style === "framed" ? "border-[3px] border-double border-[#241a1e]" : ""
         }`}
       >
-        <div className="text-center text-[8px] font-bold uppercase tracking-wider text-[#2b4c8c]">
-          {details.university}
-        </div>
-        <div className="mt-2.5">
-          <Seal logo={logo} />
-        </div>
-        <div className="mt-3 space-y-1 text-center text-[8px] font-bold uppercase">
-          <div>{details.campus}</div>
-          <div>{details.assignment}</div>
-          <div>{details.subject}</div>
-        </div>
-        <dl className="mt-auto space-y-1.5 text-[7.5px]">
+        {logo === null ? (
+          <div className="flex h-14 flex-col justify-center">
+            <div className="text-[8px] font-bold uppercase">{details.university}</div>
+            <div className="text-[6.5px] font-bold">{details.campus}</div>
+          </div>
+        ) : (
+          <Seal logo={logo} size="h-14 w-14" />
+        )}
+        <div className="mt-3 text-[11px] font-bold leading-tight">{details.assignment}</div>
+        <div className="text-[6.5px] font-bold">{details.subject}</div>
+        <dl className="mt-[22%] space-y-[3px] text-[8.5px] leading-tight">
           {rows.map(([label, value]) => (
-            <div key={label} className="flex gap-1">
-              <dt className="font-bold">{label}:</dt>
-              <dd>{value}</dd>
+            <div key={label}>
+              <dt className="inline font-bold">{label}: </dt>
+              <dd className="inline">{value}</dd>
             </div>
           ))}
         </dl>
+        <div className="mt-auto pb-0.5 text-[5px] text-[#9a8a8e]">1</div>
       </div>
     </div>
   );

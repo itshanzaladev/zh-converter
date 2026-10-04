@@ -17,7 +17,6 @@ const CODE_CHARS = Math.floor((CONTENT_W - CODE_PAD * 2 - GUTTER) / (CODE_SIZE *
 const ink = rgb(0.14, 0.1, 0.12);
 const muted = rgb(0.45, 0.4, 0.42);
 const accent = rgb(0.71, 0.31, 0.17);
-const navy = rgb(0.17, 0.3, 0.55);
 const codeBg = rgb(0.98, 0.965, 0.953);
 const codeBorder = rgb(0.9, 0.85, 0.82);
 const gutterInk = rgb(0.66, 0.6, 0.62);
@@ -59,20 +58,19 @@ class Writer {
     public fonts: { regular: PDFFont; bold: PDFFont; mono: PDFFont },
   ) {}
 
-  newPage(numbered = true) {
+  /** Every page, the cover included, gets its number centred at the bottom. */
+  newPage() {
     this.page = this.pdf.addPage(PAGE);
     this.y = PAGE[1] - MARGIN;
-    if (numbered) {
-      this.pageNo++;
-      const text = `Page ${this.pageNo}`;
-      this.page.drawText(text, {
-        x: PAGE[0] - MARGIN - this.fonts.regular.widthOfTextAtSize(text, 8.5),
-        y: 30,
-        size: 8.5,
-        font: this.fonts.regular,
-        color: gutterInk,
-      });
-    }
+    this.pageNo++;
+    const text = String(this.pageNo);
+    this.page.drawText(text, {
+      x: (PAGE[0] - this.fonts.regular.widthOfTextAtSize(text, 9)) / 2,
+      y: 30,
+      size: 9,
+      font: this.fonts.regular,
+      color: gutterInk,
+    });
   }
 
   ensure(height: number) {
@@ -148,9 +146,8 @@ class Writer {
     }
   }
 
-  async image(dataUrl: string, maxW = CONTENT_W, centered = false) {
+  async image(dataUrl: string, maxW = CONTENT_W, centered = false, maxH = PAGE[1] - MARGIN - BOTTOM) {
     const png = await this.pdf.embedPng(dataUrlToBytes(dataUrl));
-    const maxH = PAGE[1] - MARGIN - BOTTOM;
     const scale = Math.min(1, maxW / png.width, maxH / png.height);
     const width = png.width * scale;
     const height = png.height * scale;
@@ -180,34 +177,31 @@ export async function buildPdf(doc: AssignmentDoc) {
     mono: await pdf.embedFont(StandardFonts.Courier),
   });
 
-  // Cover page, laid out like the standard university title page.
+  // Cover page: everything centred. The logo (or the university name without
+  // one), the assignment and subject, then the student's details.
   const { cover } = doc;
-  w.newPage(false);
-  w.y -= 10;
-  if (cover.university) w.centered(cover.university.toUpperCase(), w.fonts.bold, 16, navy);
+  w.newPage();
   if (cover.logo) {
-    w.y -= 30;
-    await w.image(cover.logo, 150, true);
+    await w.image(cover.logo, 180, true, 165);
+  } else {
+    if (cover.university) w.centered(cover.university.toUpperCase(), w.fonts.bold, 16);
+    if (cover.campus) w.centered(cover.campus, w.fonts.bold, 12);
   }
-  w.y -= 30;
-  for (const line of [cover.campus, cover.assignment, cover.subject]) {
-    if (line) {
-      w.centered(line.toUpperCase(), w.fonts.bold, 14);
-      w.y -= 6;
-    }
-  }
-  w.y = Math.min(w.y - 80, 330);
+  w.y -= 18;
+  if (cover.assignment) w.centered(cover.assignment, w.fonts.bold, 22);
+  if (cover.subject) w.centered(cover.subject, w.fonts.bold, 12);
+
+  w.y = Math.min(w.y - 70, 470);
   for (const [label, value] of coverRows(cover)) {
-    const labelText = `${label}: `;
-    w.page.drawText(labelText, { x: MARGIN, y: w.y, size: 13, font: w.fonts.bold, color: ink });
-    w.page.drawText(safe(value), {
-      x: MARGIN + w.fonts.bold.widthOfTextAtSize(labelText, 13),
-      y: w.y,
-      size: 13,
-      font: w.fonts.regular,
-      color: ink,
-    });
-    w.y -= 30;
+    const size = 19;
+    const labelText = `${label}:`;
+    const valueText = safe(value);
+    // A fixed gap rather than a trailing space, whose width varies between PDF viewers.
+    const labelWidth = w.fonts.bold.widthOfTextAtSize(labelText, size) + size * 0.3;
+    const x = (PAGE[0] - labelWidth - w.fonts.regular.widthOfTextAtSize(valueText, size)) / 2;
+    w.page.drawText(labelText, { x, y: w.y, size, font: w.fonts.bold, color: ink });
+    w.page.drawText(valueText, { x: x + labelWidth, y: w.y, size, font: w.fonts.regular, color: ink });
+    w.y -= 32;
   }
 
   for (const question of doc.questions) {
