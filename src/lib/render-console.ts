@@ -2,7 +2,7 @@ import { expandTabs } from "./assignment";
 import type { RunResult } from "./judge0";
 import type { Program } from "./programs";
 import { captureWebOutput } from "./render-web";
-import type { CodeFile } from "./types";
+import type { CodeFile, OutputPart } from "./types";
 
 const FONT_SIZE = 15;
 const LINE_HEIGHT = 19;
@@ -166,5 +166,17 @@ export async function captureConsoleOutput(
     }
     sections.push(sectionFor(result, stdin, inputLimit));
   }
-  return drawTerminals(sections);
+  const all = drawTerminals(sections);
+  if (programs.length < 2) return all;
+
+  // Separate programs (part A, part B…) also get an output each, with their
+  // files, so the export can put every part's output right under its code.
+  // A file shared by several parts (a header, say) is shown with the first.
+  const shown = new Set<string>();
+  const parts: OutputPart[] = programs.map((program, i) => {
+    const files = [program.entry, ...program.files].map((f) => f.name).filter((name) => !shown.has(name));
+    files.forEach((name) => shown.add(name));
+    return { files, ...drawTerminals([sections[i]]) };
+  });
+  return { ...all, parts };
 }

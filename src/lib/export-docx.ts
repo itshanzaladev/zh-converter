@@ -18,7 +18,7 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import { coverRows, expandTabs, type AssignmentDoc } from "./assignment";
+import { coverRows, expandTabs, questionParts, type AssignmentDoc } from "./assignment";
 import { coverSpec, coverTitle, pageBorder, type CoverSpec } from "./cover-styles";
 import { highlight } from "./highlight";
 import { ideTheme, type IdeTheme } from "./ide-themes";
@@ -333,26 +333,28 @@ async function questionsSection(doc: AssignmentDoc) {
       }
     }
 
-    children.push(label("Code"));
-    // Each file sits under its own IDE tab, which carries its name.
-    question.files.forEach((file, i) => {
-      if (i > 0) children.push(new Paragraph({ spacing: { after: 0 }, children: [] }));
-      children.push(codeBlock(file, theme));
-    });
+    // Each part: its code, its output, then a rule across the page like
+    // Word's "---" line. Each file sits under its own IDE tab, which carries its name.
+    for (const part of questionParts(question)) {
+      children.push(label("Code"));
+      part.files.forEach((file, i) => {
+        if (i > 0) children.push(new Paragraph({ spacing: { after: 0 }, children: [] }));
+        children.push(codeBlock(file, theme));
+      });
 
-    if (question.output.status === "done") {
-      children.push(label("Output"));
-      children.push(await imageParagraph(question.output.image, CONTENT_WIDTH_PX, MAX_IMAGE_HEIGHT_PX, AlignmentType.LEFT));
+      if (part.output) {
+        children.push(label("Output"));
+        children.push(await imageParagraph(part.output.image, CONTENT_WIDTH_PX, MAX_IMAGE_HEIGHT_PX, AlignmentType.LEFT));
+      }
+
+      children.push(
+        new Paragraph({
+          spacing: { before: 240, after: 120 },
+          border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000", space: 1 } },
+          children: [],
+        }),
+      );
     }
-
-    // A rule across the page closes the question, like Word's "---" line.
-    children.push(
-      new Paragraph({
-        spacing: { before: 240, after: 120 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000", space: 1 } },
-        children: [],
-      }),
-    );
   }
 
   // Numbering continues from the cover, which is page 1.

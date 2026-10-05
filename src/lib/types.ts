@@ -33,10 +33,24 @@ export type CodeFile = {
   suggested: number | null;
 };
 
+export type OutputPart = { files: string[]; image: string; width: number; height: number };
+
 export type OutputState =
   | { status: "idle" }
   | { status: "running" }
-  | { status: "done"; image: string; width: number; height: number; source: "auto" | "upload" }
+  | {
+      status: "done";
+      image: string;
+      width: number;
+      height: number;
+      source: "auto" | "upload";
+      /**
+       * When a question holds several separate programs (part A, part B…),
+       * each one's files and its own output, so the export can show every
+       * part's code followed by its output. `image` is all of them together.
+       */
+      parts?: OutputPart[];
+    }
   | { status: "error"; message: string };
 
 export type Question = {

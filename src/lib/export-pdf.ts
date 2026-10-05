@@ -19,7 +19,7 @@ import {
   type PDFImage,
   type PDFPage,
 } from "pdf-lib";
-import { coverRows, expandTabs, type AssignmentDoc } from "./assignment";
+import { coverRows, expandTabs, questionParts, type AssignmentDoc } from "./assignment";
 import { coverSpec, coverTitle, pageBorder, type CoverSpec } from "./cover-styles";
 import { highlight, type Token } from "./highlight";
 import { ideTheme, type IdeTheme, type TokenStyle } from "./ide-themes";
@@ -572,23 +572,31 @@ export async function buildPdf(doc: AssignmentDoc) {
 
     w.y -= 10;
     w.text("Code", { font: w.fonts.bold, size: 12, color: accent, gap: 6 });
-    // Each file sits under its own IDE tab, which carries its name.
-    for (const file of question.files) {
-      await w.code(file, theme);
-      w.y -= 12;
-    }
+    // Each part: its code, its output, then a rule across the page like
+    // Word's "---" line. Each file sits under its own IDE tab, which carries its name.
+    for (const [i, part] of questionParts(question).entries()) {
+      if (i > 0) {
+        w.y -= 16;
+        w.text("Code", { font: w.fonts.bold, size: 12, color: accent, gap: 6 });
+      }
+      for (const file of part.files) {
+        await w.code(file, theme);
+        w.y -= 12;
+      }
 
-    if (question.output.status === "done") {
-      w.y -= 6;
-      w.ensure(80);
-      w.text("Output", { font: w.fonts.bold, size: 12, color: accent, gap: 6 });
-      await w.image(question.output.image);
-    }
+      if (part.output) {
+        w.y -= 6;
+        // Keep the "Output" label on the same page as the output itself.
+        const imageHeight = Math.min(CONTENT_W * (part.output.height / part.output.width), PAGE[1] - MARGIN - BOTTOM - 40);
+        w.ensure(30 + imageHeight);
+        w.text("Output", { font: w.fonts.bold, size: 12, color: accent, gap: 6 });
+        await w.image(part.output.image);
+      }
 
-    // A rule across the page closes the question, like Word's "---" line.
-    w.y -= 18;
-    w.ensure(4);
-    w.page.drawLine({ start: { x: MARGIN, y: w.y }, end: { x: MARGIN + CONTENT_W, y: w.y }, thickness: 0.8, color: ink });
+      w.y -= 18;
+      w.ensure(4);
+      w.page.drawLine({ start: { x: MARGIN, y: w.y }, end: { x: MARGIN + CONTENT_W, y: w.y }, thickness: 0.8, color: ink });
+    }
   }
 
   const bytes = await pdf.save();
