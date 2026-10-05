@@ -52,6 +52,8 @@ export type CoverStyle = "classic" | "bordered" | "framed" | "formal";
 
 export type CoverDetails = {
   style: CoverStyle;
+  /** Repeat the cover style's border (or a thin one) on every page after the cover. */
+  pageBorder: boolean;
   university: string;
   campus: string;
   assignment: string;
@@ -67,6 +69,7 @@ export type CoverDetails = {
 
 export const EMPTY_COVER: CoverDetails = {
   style: "classic",
+  pageBorder: false,
   university: "",
   campus: "",
   assignment: "",

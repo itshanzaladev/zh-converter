@@ -4,17 +4,16 @@ import type { Program } from "./programs";
 import { captureWebOutput } from "./render-web";
 import type { CodeFile } from "./types";
 
-const FONT_SIZE = 14;
-const LINE_HEIGHT = 20;
-const FONT = `${FONT_SIZE}px Consolas, "Cascadia Mono", Menlo, "DejaVu Sans Mono", "Courier New", monospace`;
-const PAD = 16;
-const TITLE_BAR = 30;
+const FONT_SIZE = 15;
+const LINE_HEIGHT = 19;
+const FONT = `${FONT_SIZE}px Consolas, "Lucida Console", "Courier New", monospace`;
+const PAD = 10;
 const MAX_COLUMNS = 92;
 const MIN_COLUMNS = 56;
 const MAX_LINES = 80;
 const SCALE = 2;
 
-type Section = { title: string; lines: { text: string; error?: boolean }[] };
+type Section = { lines: { text: string }[] };
 
 /**
  * Judge0 never sees a keyboard, so typed input is missing from stdout
@@ -55,22 +54,27 @@ function wrap(text: string, columns: number) {
   return rows;
 }
 
-function sectionFor(program: Program, result: RunResult, stdin: string, inputLimit?: number): Section {
+function sectionFor(result: RunResult, stdin: string, inputLimit?: number): Section {
   const stdout = clean(result.inputEchoed ? result.stdout : withInput(result.stdout, stdin, inputLimit));
   const stderr = clean(result.stderr);
   const lines = [
     ...(stdout ? wrap(stdout, MAX_COLUMNS).map((text) => ({ text })) : []),
-    ...(stderr ? wrap(stderr, MAX_COLUMNS).map((text) => ({ text, error: true })) : []),
+    ...(stderr ? wrap(stderr, MAX_COLUMNS).map((text) => ({ text })) : []),
   ];
-  if (!lines.length) lines.push({ text: "(The program printed nothing.)" });
+  // A program that prints nothing leaves an empty console, as it would on screen.
+  if (!lines.length) lines.push({ text: "" });
   if (lines.length > MAX_LINES) {
     const hidden = lines.length - MAX_LINES + 1;
     lines.splice(MAX_LINES - 1, Infinity, { text: `… ${hidden} more lines` });
   }
-  return { title: program.entry.name, lines };
+  return { lines };
 }
 
-/** Draws each program's output as a terminal window, stacked, as one PNG. */
+/**
+ * Draws each program's output the way the Windows console shows it: grey
+ * text on black, nothing else. No title bar, buttons or rounded corners, so
+ * it reads as a plain output area. Several programs stack with a gap.
+ */
 function drawTerminals(sections: Section[]) {
   const measure = document.createElement("canvas").getContext("2d")!;
   measure.font = FONT;
@@ -80,8 +84,8 @@ function drawTerminals(sections: Section[]) {
     Math.min(MAX_COLUMNS, ...sections.flatMap((s) => s.lines.map((l) => l.text.length)).concat(MIN_COLUMNS)),
   );
   const width = Math.ceil(columns * charWidth + PAD * 2);
-  const heights = sections.map((s) => TITLE_BAR + PAD * 2 + s.lines.length * LINE_HEIGHT);
-  const gap = 18;
+  const heights = sections.map((s) => PAD * 2 + s.lines.length * LINE_HEIGHT);
+  const gap = 14;
   const height = heights.reduce((a, b) => a + b, 0) + gap * (sections.length - 1);
 
   const canvas = document.createElement("canvas");
@@ -94,37 +98,16 @@ function drawTerminals(sections: Section[]) {
 
   let top = 0;
   sections.forEach((section, i) => {
-    const h = heights[i];
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(0.5, top + 0.5, width - 1, h - 1, 8);
-    ctx.clip();
     ctx.fillStyle = "#0c0c0c";
-    ctx.fillRect(0, top, width, h);
-    ctx.fillStyle = "#2b2b2b";
-    ctx.fillRect(0, top, width, TITLE_BAR);
-    ctx.restore();
-
-    ["#ff5f57", "#febc2e", "#28c840"].forEach((color, dot) => {
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(PAD + dot * 18, top + TITLE_BAR / 2, 5, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    ctx.font = `12px ${FONT.split("px ")[1]}`;
-    ctx.fillStyle = "#b9b9b9";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(`${section.title} — Output`, width / 2, top + TITLE_BAR / 2);
-
+    ctx.fillRect(0, top, width, heights[i]);
     ctx.font = FONT;
-    ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
+    // The console prints errors in the same grey as everything else.
+    ctx.fillStyle = "#cccccc";
     section.lines.forEach((line, row) => {
-      ctx.fillStyle = line.error ? "#ff7b72" : "#e6e6e6";
-      ctx.fillText(line.text, PAD, top + TITLE_BAR + PAD + row * LINE_HEIGHT + FONT_SIZE);
+      ctx.fillText(line.text, PAD, top + PAD + row * LINE_HEIGHT + FONT_SIZE - 2);
     });
-    top += h + gap;
+    top += heights[i] + gap;
   });
 
   return { image: canvas.toDataURL("image/png"), width, height };
@@ -181,7 +164,7 @@ export async function captureConsoleOutput(
         `${program.entry.name} ran for too long and was stopped. If it asks for input, add it under Program input; if it has a loop, check that the loop ends.`,
       );
     }
-    sections.push(sectionFor(program, result, stdin, inputLimit));
+    sections.push(sectionFor(result, stdin, inputLimit));
   }
   return drawTerminals(sections);
 }

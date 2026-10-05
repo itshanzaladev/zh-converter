@@ -1,39 +1,133 @@
 import {
+  beginText,
+  endText,
+  moveText,
   PDFDocument,
   PDFHexString,
   PDFName,
   PDFOperator,
   PDFOperatorNames,
+  popGraphicsState,
+  pushGraphicsState,
   rgb,
+  setFontAndSize,
+  setTextRenderingMode,
+  showText,
   StandardFonts,
+  TextRenderingMode,
   type PDFFont,
   type PDFImage,
   type PDFPage,
 } from "pdf-lib";
 import { coverRows, expandTabs, type AssignmentDoc } from "./assignment";
-import { coverSpec, coverTitle } from "./cover-styles";
+import { coverSpec, coverTitle, pageBorder, type CoverSpec } from "./cover-styles";
+import { highlight, type Token } from "./highlight";
+import { ideTheme, type IdeTheme, type TokenStyle } from "./ide-themes";
 import { dataUrlToBytes } from "./images";
-import type { CoverDetails } from "./types";
+import type { CoverDetails, Language } from "./types";
 
 const PAGE: [number, number] = [595.28, 841.89];
 const MARGIN = 56;
 const CONTENT_W = PAGE[0] - MARGIN * 2;
 const BOTTOM = 60;
 
-/** Courier glyphs are exactly 0.6em wide, which the code layout relies on. */
+/** JetBrains Mono and Courier glyphs are both exactly 0.6em wide; the code layout relies on it. */
+const CHAR_EM = 0.6;
 const CODE_SIZE = 8.5;
 const CODE_MIN_SIZE = 6;
 const CODE_PAD = 10;
-const GUTTER = 26;
+const GUTTER = 30;
 const NUMBER_SIZE = 7;
+const TAB_BAR = 19;
+const TOOLBAR = 15;
 const NBSP = " ";
 
 const ink = rgb(0.14, 0.1, 0.12);
 const muted = rgb(0.45, 0.4, 0.42);
 const accent = rgb(0.71, 0.31, 0.17);
-const codeBg = rgb(0.98, 0.965, 0.953);
 const codeBorder = rgb(0.9, 0.85, 0.82);
 const gutterInk = rgb(0.66, 0.6, 0.62);
+
+function hex(color: string) {
+  const n = parseInt(color, 16);
+  return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
+
+/** The tokens covering characters [start, end) of a line, cut at the edges. */
+function sliceTokens(tokens: Token[], start: number, end: number) {
+  const out: Token[] = [];
+  let at = 0;
+  for (const token of tokens) {
+    const from = Math.max(start, at);
+    const to = Math.min(end, at + token.text.length);
+    if (from < to) out.push({ text: token.text.slice(from - at, to - at), kind: token.kind });
+    at += token.text.length;
+  }
+  return out;
+}
+
+type Variant = "regular" | "bold" | "italic" | "boldItalic";
+
+/** The part of a fontkit font used to draw glyphs as shapes. */
+type GlyphFont = {
+  unitsPerEm: number;
+  glyphForCodePoint(codePoint: number): { path: { scale(x: number, y: number): { toSVG(): string } } };
+};
+
+type CodeFonts = Record<Variant, PDFFont> & {
+  unicode: boolean;
+  /** The same fonts' outlines, for drawing code as shapes; null with the Courier fallback. */
+  shapes: Record<Variant, GlyphFont> | null;
+};
+
+const VARIANTS: [Variant, string][] = [
+  ["regular", "Regular"],
+  ["bold", "Bold"],
+  ["italic", "Italic"],
+  ["boldItalic", "BoldItalic"],
+];
+
+/**
+ * JetBrains Mono for code, fetched from /fonts and embedded (only the
+ * characters used). Outside a browser, or if the fetch fails, the standard
+ * Courier fonts, which only cover Latin-1.
+ */
+async function codeFonts(pdf: PDFDocument): Promise<CodeFonts> {
+  if (typeof window !== "undefined") {
+    try {
+      const fontkit = (await import("@pdf-lib/fontkit")).default;
+      pdf.registerFontkit(fontkit);
+      const loaded = await Promise.all(
+        VARIANTS.map(async ([, file]) => {
+          const response = await fetch(`/fonts/JetBrainsMono-${file}.ttf`);
+          if (!response.ok) throw new Error(`Font ${file} missing`);
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          // Ligatures off: JetBrains Mono would join <= into ≤, which the IDEs don't.
+          const font = await pdf.embedFont(bytes, { subset: true, features: { calt: false, liga: false, clig: false } });
+          return { font, shape: fontkit.create(bytes) as unknown as GlyphFont };
+        }),
+      );
+      const pick = <T,>(get: (l: (typeof loaded)[number]) => T) =>
+        Object.fromEntries(VARIANTS.map(([variant], i) => [variant, get(loaded[i])])) as Record<Variant, T>;
+      return { ...pick((l) => l.font), unicode: true, shapes: pick((l) => l.shape) };
+    } catch (error) {
+      console.warn("Falling back to Courier for code:", error);
+    }
+  }
+  const [regular, bold, italic, boldItalic] = await Promise.all(
+    [StandardFonts.Courier, StandardFonts.CourierBold, StandardFonts.CourierOblique, StandardFonts.CourierBoldOblique].map((f) =>
+      pdf.embedFont(f),
+    ),
+  );
+  return { regular, bold, italic, boldItalic, unicode: false, shapes: null };
+}
+
+function variantOf(style: TokenStyle): Variant {
+  if (style.bold && style.italic) return "boldItalic";
+  if (style.bold) return "bold";
+  if (style.italic) return "italic";
+  return "regular";
+}
 
 /** The standard PDF fonts only cover Latin-1; anything else would throw. */
 function safe(text: string) {
@@ -69,13 +163,35 @@ class Writer {
 
   constructor(
     private pdf: PDFDocument,
-    public fonts: { regular: PDFFont; bold: PDFFont; mono: PDFFont },
+    public fonts: { regular: PDFFont; bold: PDFFont; mono: PDFFont; code: CodeFonts },
   ) {}
+
+  /** Border drawn on every new page; the cover draws its own, so this is set after it. */
+  pageBorder: CoverSpec["border"] = "none";
+
+  frame(border: CoverSpec["border"]) {
+    const rect = (inset: number, thickness: number) =>
+      this.page.drawRectangle({
+        x: inset,
+        y: inset,
+        width: PAGE[0] - inset * 2,
+        height: PAGE[1] - inset * 2,
+        borderColor: ink,
+        borderWidth: thickness,
+      });
+    if (border === "single") rect(BORDER_INSET, 1.2);
+    if (border === "double") {
+      rect(BORDER_INSET, 0.8);
+      rect(BORDER_INSET + 4, 0.8);
+    }
+    if (border === "thick") rect(BORDER_INSET, 3);
+  }
 
   /** Every page, the cover included, gets its number centred at the bottom. */
   newPage() {
     this.page = this.pdf.addPage(PAGE);
     this.y = PAGE[1] - MARGIN;
+    this.frame(this.pageBorder);
     this.pageNo++;
     const text = String(this.pageNo);
     this.page.drawText(text, {
@@ -103,29 +219,30 @@ class Writer {
     this.y -= opts.gap ?? 0;
   }
 
-  private numberImages = new Map<number, PDFImage | null>();
+  private numberImages = new Map<string, PDFImage | null>();
 
   /**
    * Line numbers are drawn as tiny pictures, not text, so copying code out of
    * the PDF never picks them up. Outside a browser (no canvas) they're left out.
    */
-  private async lineNumber(no: number) {
-    if (this.numberImages.has(no)) return this.numberImages.get(no)!;
+  private async lineNumber(no: number, color: string) {
+    const key = `${color}:${no}`;
+    if (this.numberImages.has(key)) return this.numberImages.get(key)!;
     let image: PDFImage | null = null;
     if (typeof document !== "undefined") {
       const scale = 4;
       const canvas = document.createElement("canvas");
-      canvas.width = (GUTTER - 6) * scale;
+      canvas.width = (GUTTER - 8) * scale;
       canvas.height = NUMBER_SIZE * 1.3 * scale;
       const ctx = canvas.getContext("2d")!;
-      ctx.font = `${NUMBER_SIZE * scale}px "Courier New", Courier, monospace`;
-      ctx.fillStyle = "#a89a9e";
+      ctx.font = `${NUMBER_SIZE * scale}px "ZH Code", Consolas, "Courier New", monospace`;
+      ctx.fillStyle = `#${color}`;
       ctx.textAlign = "right";
       ctx.textBaseline = "alphabetic";
       ctx.fillText(String(no), canvas.width, NUMBER_SIZE * scale);
       image = await this.pdf.embedPng(dataUrlToBytes(canvas.toDataURL("image/png")));
     }
-    this.numberImages.set(no, image);
+    this.numberImages.set(key, image);
     return image;
   }
 
@@ -144,43 +261,139 @@ class Writer {
     this.page.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
   }
 
+  private glyphPaths = new Map<string, string>();
+
   /**
-   * Code is drawn line by line so a long file flows across pages naturally,
-   * and each line copies out exactly as written: indentation, spacing and
-   * blank lines kept, line numbers left out. Long lines shrink the font
-   * (down to 6pt) rather than wrap; a line that still doesn't fit wraps on
-   * screen at a space but copies as one line, and never splits across pages.
+   * Draws text as filled glyph outlines rather than text, so it looks the same
+   * but can't be selected. Each glyph is one monospace cell wide.
    */
-  async code(content: string) {
-    const source = content
+  private drawShapes(text: string, x: number, baseline: number, size: number, variant: Variant, color: string) {
+    const font = this.fonts.code.shapes![variant];
+    const scale = size / font.unitsPerEm;
+    let cx = x;
+    for (const char of text) {
+      if (char !== " ") {
+        const key = `${variant}:${char}`;
+        let path = this.glyphPaths.get(key);
+        if (path === undefined) {
+          // Font outlines point y up; drawSvgPath expects SVG's y down.
+          path = font.glyphForCodePoint(char.codePointAt(0)!).path.scale(1, -1).toSVG();
+          this.glyphPaths.set(key, path);
+        }
+        if (path) this.page.drawSvgPath(path, { x: cx, y: baseline, scale, color: hex(color) });
+      }
+      cx += size * CHAR_EM;
+    }
+  }
+
+  private invisibleFontKeys = new Map<PDFPage, PDFName>();
+
+  /**
+   * Invisible text over the shapes: this is what selecting and copying picks
+   * up. One piece of text per row, so a whole line selects at once.
+   */
+  private drawInvisibleText(text: string, x: number, baseline: number, size: number) {
+    const font = this.fonts.code.regular;
+    let key = this.invisibleFontKeys.get(this.page);
+    if (!key) {
+      key = this.page.node.newFontDictionary(font.name, font.ref);
+      this.invisibleFontKeys.set(this.page, key);
+    }
+    // The rendering mode outlives the text block, so save and restore the
+    // graphics state around it, or every later piece of text would be invisible.
+    this.page.pushOperators(
+      pushGraphicsState(),
+      beginText(),
+      setFontAndSize(key, size),
+      setTextRenderingMode(TextRenderingMode.Invisible),
+      moveText(x, baseline),
+      showText(font.encodeText(text.replace(/[\u0000-\u001f]/g, " "))),
+      endText(),
+      popGraphicsState(),
+    );
+  }
+
+  /** The IDE's file tab (and NetBeans' Source/History strip) above the code. */
+  private codeHeader(fileName: string, theme: IdeTheme) {
+    const bar = theme.tabBar;
+    const tabSize = 7.5;
+    const labelFont = bar.bold ? this.fonts.bold : this.fonts.regular;
+    const label = `${safe(fileName)}   ×`;
+    const tabWidth = labelFont.widthOfTextAtSize(label, tabSize) + 24;
+    const top = this.y;
+
+    this.page.drawRectangle({ x: MARGIN, y: top - TAB_BAR, width: CONTENT_W, height: TAB_BAR, color: hex(bar.background) });
+    this.page.drawRectangle({
+      x: MARGIN,
+      y: top - TAB_BAR,
+      width: tabWidth,
+      height: TAB_BAR - 3,
+      color: hex(bar.tab),
+      borderColor: bar.border ? hex(bar.border) : undefined,
+      borderWidth: bar.border ? 0.6 : 0,
+    });
+    if (bar.accent) {
+      this.page.drawRectangle({ x: MARGIN, y: top - 4, width: tabWidth, height: 1.2, color: hex(bar.accent) });
+    }
+    this.page.drawText(label, { x: MARGIN + 12, y: top - TAB_BAR + 6, size: tabSize, font: labelFont, color: hex(bar.text) });
+    this.y -= TAB_BAR;
+
+    if (theme.toolbar) {
+      const bar2 = theme.toolbar;
+      this.page.drawRectangle({ x: MARGIN, y: this.y - TOOLBAR, width: CONTENT_W, height: TOOLBAR, color: hex(bar2.background) });
+      this.page.drawRectangle({ x: MARGIN + 4, y: this.y - TOOLBAR + 2.5, width: 34, height: TOOLBAR - 5, color: hex("FFFFFF"), borderColor: hex("C0C0C0"), borderWidth: 0.5 });
+      this.page.drawText("Source", { x: MARGIN + 9, y: this.y - TOOLBAR + 5, size: 6.5, font: this.fonts.regular, color: hex(bar2.text) });
+      this.page.drawText("History", { x: MARGIN + 46, y: this.y - TOOLBAR + 5, size: 6.5, font: this.fonts.regular, color: hex(bar2.text) });
+      this.y -= TOOLBAR;
+    }
+  }
+
+  /**
+   * Code is drawn the way the chosen IDE shows it: its file tab, gutter,
+   * background and syntax colours. Each line still copies out exactly as
+   * written (indentation, spacing and blank lines kept, line numbers left
+   * out). Long lines shrink the font (down to 6pt) rather than wrap; a line
+   * that still doesn't fit wraps on screen at a space but copies as one line,
+   * and never splits across pages.
+   */
+  async code(file: { name: string; content: string; language: Language }, theme: IdeTheme) {
+    const source = file.content
+      .replace(/\r\n?/g, "\n")
       .replace(/\n+$/, "")
       .split("\n")
       .map((raw) => expandTabs(raw).replace(/\s+$/, ""));
-    const width = CONTENT_W - CODE_PAD * 2 - GUTTER;
+    const tokens = highlight(source.join("\n"), file.language);
+    const codeX = MARGIN + GUTTER + CODE_PAD;
+    const width = MARGIN + CONTENT_W - CODE_PAD - codeX;
     const longest = Math.max(1, ...source.map((line) => line.length));
-    const size = Math.max(CODE_MIN_SIZE, Math.min(CODE_SIZE, width / (longest * 0.6)));
-    const lineHeight = size * 1.41;
-    const perRow = Math.floor(width / (size * 0.6));
+    const size = Math.max(CODE_MIN_SIZE, Math.min(CODE_SIZE, width / (longest * CHAR_EM)));
+    const charWidth = size * CHAR_EM;
+    const lineHeight = size * 1.45;
+    const perRow = Math.floor(width / charWidth);
 
     const lines = source.map((text, i) => {
-      const rows: string[] = [];
-      let rest = safe(text);
-      while (rest.length > perRow) {
-        const space = rest.lastIndexOf(" ", perRow);
-        const cut = space > perRow * 0.5 ? space + 1 : perRow;
-        rows.push(rest.slice(0, cut));
-        rest = rest.slice(cut);
+      // Break points for a line too long for the page, at a space where possible.
+      const cuts: number[] = [0];
+      while (text.length - cuts.at(-1)! > perRow) {
+        const from = cuts.at(-1)!;
+        const space = text.lastIndexOf(" ", from + perRow);
+        cuts.push(space > from + perRow * 0.5 ? space + 1 : from + perRow);
       }
-      rows.push(rest);
+      const rows = cuts.map((start, r) => sliceTokens(tokens[i] ?? [], start, cuts[r + 1] ?? text.length));
       // Readers keep non-breaking spaces (and paste them as normal spaces)
       // but squeeze ordinary ones. A blank line needs two to survive at all.
       const copy = text ? text.replace(/ /g, NBSP) : NBSP + NBSP;
       return { no: i + 1, rows, copy };
     });
 
+    const headerHeight = TAB_BAR + (theme.toolbar ? TOOLBAR : 0);
+    const border = hex(theme.gutter.border ?? "3C3C3C");
+    let first = true;
     let index = 0;
     while (index < lines.length) {
-      this.ensure(lineHeight * 3 + CODE_PAD * 2);
+      this.ensure((first ? headerHeight : 0) + lineHeight * 3 + CODE_PAD * 2);
+      const blockTop = this.y;
+      if (first) this.codeHeader(file.name, theme);
       const fit = Math.floor((this.y - BOTTOM - CODE_PAD * 2) / lineHeight);
       // Whole lines only, so a wrapped line stays on one page.
       const chunk: typeof lines = [];
@@ -192,33 +405,68 @@ class Writer {
         used += next.rows.length;
       }
       const height = used * lineHeight + CODE_PAD * 2;
-      this.page.drawRectangle({
-        x: MARGIN,
-        y: this.y - height,
-        width: CONTENT_W,
-        height,
-        color: codeBg,
-        borderColor: codeBorder,
-        borderWidth: 0.6,
-      });
-      let rowY = this.y - CODE_PAD - lineHeight + size * 0.35;
-      for (const line of chunk) {
-        const image = await this.lineNumber(line.no);
-        if (image) {
-          const h = NUMBER_SIZE * 1.3;
-          this.page.drawImage(image, { x: MARGIN + CODE_PAD - 4, y: rowY - h + NUMBER_SIZE, width: GUTTER - 6, height: h });
-        }
-        // One span around all of a line's rows, so a wrapped line copies as one.
-        this.drawWithCopyText(line.copy, () => {
-          for (const row of line.rows) {
-            // A blank row still draws two spaces: Chrome drops blank lines with less.
-            this.page.drawText(row || "  ", { x: MARGIN + CODE_PAD + GUTTER, y: rowY, size, font: this.fonts.mono, color: ink });
-            rowY -= lineHeight;
-          }
-        });
+      const bottom = this.y - height;
+      this.page.drawRectangle({ x: MARGIN, y: bottom, width: CONTENT_W, height, color: hex(theme.background) });
+      this.page.drawRectangle({ x: MARGIN, y: bottom, width: GUTTER, height, color: hex(theme.gutter.background) });
+      if (theme.gutter.border) {
+        this.page.drawLine({ start: { x: MARGIN + GUTTER, y: bottom }, end: { x: MARGIN + GUTTER, y: this.y }, thickness: 0.6, color: border });
       }
-      this.y -= height;
+      const marginX = codeX + 80 * charWidth;
+      if (theme.rightMargin && marginX < MARGIN + CONTENT_W - 2) {
+        this.page.drawLine({ start: { x: marginX, y: bottom }, end: { x: marginX, y: this.y }, thickness: 0.6, color: hex(theme.rightMargin) });
+      }
+      this.page.drawRectangle({ x: MARGIN, y: bottom, width: CONTENT_W, height: blockTop - bottom, borderColor: border, borderWidth: 0.6 });
+
+      let rowY = this.y - CODE_PAD - lineHeight + size * 0.4;
+      for (const line of chunk) {
+        const baselines = line.rows.map((_, r) => rowY - r * lineHeight);
+        if (this.fonts.code.shapes) {
+          // Shapes you see (numbers and coloured code), and invisible text
+          // you select and copy: one text run per row, so a whole line
+          // selects at once and copies exactly as written.
+          const no = String(line.no);
+          this.drawShapes(no, MARGIN + GUTTER - 5 - no.length * NUMBER_SIZE * CHAR_EM, rowY, NUMBER_SIZE, "regular", theme.gutter.number);
+          line.rows.forEach((row, r) => {
+            let x = codeX;
+            for (const token of row) {
+              const style = theme.tokens[token.kind];
+              this.drawShapes(token.text, x, baselines[r], size, variantOf(style), style.color);
+              x += token.text.length * charWidth;
+            }
+          });
+          // One span around all of a line's rows, so a wrapped line copies as one.
+          // A blank row still gets two spaces: Chrome drops blank lines with less.
+          this.drawWithCopyText(line.copy, () =>
+            line.rows.forEach((row, r) =>
+              this.drawInvisibleText(row.map((t) => t.text).join("") || "  ", codeX, baselines[r], size),
+            ),
+          );
+        } else {
+          // Courier fallback: the coloured text itself is what copies.
+          const image = await this.lineNumber(line.no, theme.gutter.number);
+          if (image) {
+            const h = NUMBER_SIZE * 1.3;
+            this.page.drawImage(image, { x: MARGIN + 3, y: rowY - h + NUMBER_SIZE, width: GUTTER - 8, height: h });
+          }
+          this.drawWithCopyText(line.copy, () =>
+            line.rows.forEach((row, r) => {
+              let x = codeX;
+              if (!row.length) {
+                this.page.drawText("  ", { x, y: baselines[r], size, font: this.fonts.code.regular, color: hex(theme.tokens.plain.color) });
+              }
+              for (const token of row) {
+                const style = theme.tokens[token.kind];
+                this.page.drawText(safe(token.text), { x, y: baselines[r], size, font: this.fonts.code[variantOf(style)], color: hex(style.color) });
+                x += token.text.length * charWidth;
+              }
+            }),
+          );
+        }
+        rowY -= line.rows.length * lineHeight;
+      }
+      this.y = bottom;
       index += chunk.length;
+      first = false;
     }
   }
 
@@ -254,22 +502,7 @@ async function drawCover(w: Writer, cover: CoverDetails) {
   const spec = coverSpec(cover);
   const title = coverTitle(cover);
   w.newPage();
-
-  const frame = (inset: number, thickness: number) =>
-    w.page.drawRectangle({
-      x: inset,
-      y: inset,
-      width: PAGE[0] - inset * 2,
-      height: PAGE[1] - inset * 2,
-      borderColor: ink,
-      borderWidth: thickness,
-    });
-  if (spec.border === "single") frame(BORDER_INSET, 1.2);
-  if (spec.border === "double") {
-    frame(BORDER_INSET, 0.8);
-    frame(BORDER_INSET + 4, 0.8);
-  }
-  if (spec.border === "thick") frame(BORDER_INSET, 3);
+  w.frame(spec.border);
 
   if (cover.logo) await w.image(cover.logo, 180, true, 165);
   if (!cover.logo || spec.universityLine) {
@@ -325,9 +558,12 @@ export async function buildPdf(doc: AssignmentDoc) {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),
     mono: await pdf.embedFont(StandardFonts.Courier),
+    code: await codeFonts(pdf),
   });
+  const theme = ideTheme(doc.ide);
 
   await drawCover(w, doc.cover);
+  w.pageBorder = pageBorder(doc.cover);
 
   for (const question of doc.questions) {
     w.newPage();
@@ -336,10 +572,10 @@ export async function buildPdf(doc: AssignmentDoc) {
 
     w.y -= 10;
     w.text("Code", { font: w.fonts.bold, size: 12, color: accent, gap: 6 });
+    // Each file sits under its own IDE tab, which carries its name.
     for (const file of question.files) {
-      if (question.files.length > 1) w.text(file.name, { font: w.fonts.mono, size: 9, color: muted, gap: 3 });
-      await w.code(file.content);
-      w.y -= 10;
+      await w.code(file, theme);
+      w.y -= 12;
     }
 
     if (question.output.status === "done") {
@@ -348,6 +584,11 @@ export async function buildPdf(doc: AssignmentDoc) {
       w.text("Output", { font: w.fonts.bold, size: 12, color: accent, gap: 6 });
       await w.image(question.output.image);
     }
+
+    // A rule across the page closes the question, like Word's "---" line.
+    w.y -= 18;
+    w.ensure(4);
+    w.page.drawLine({ start: { x: MARGIN, y: w.y }, end: { x: MARGIN + CONTENT_W, y: w.y }, thickness: 0.8, color: ink });
   }
 
   const bytes = await pdf.save();

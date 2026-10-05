@@ -7,7 +7,7 @@ import { COVER_STYLES } from "@/lib/cover-styles";
 import { toPng } from "@/lib/images";
 import { CoverPage, withPlaceholders } from "@/components/cover-page";
 
-const FIELDS: { key: Exclude<keyof CoverDetails, "logo" | "style">; label: string; placeholder: string; wide?: boolean }[] = [
+const FIELDS: { key: Exclude<keyof CoverDetails, "logo" | "style" | "pageBorder">; label: string; placeholder: string; wide?: boolean }[] = [
   { key: "university", label: "University", placeholder: "COMSATS University", wide: true },
   { key: "campus", label: "Campus", placeholder: "Wah Campus" },
   { key: "assignment", label: "Assignment", placeholder: "Assignment #03" },
@@ -72,6 +72,22 @@ export function CoverForm({
             );
           })}
         </div>
+        <label className="mt-3 flex cursor-pointer items-center gap-2.5 text-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-[var(--peach-strong)]"
+            checked={cover.pageBorder}
+            onChange={(e) => onChange({ ...cover, pageBorder: e.target.checked })}
+          />
+          <span>
+            Border on every page
+            <span className="text-muted">
+              {" "}
+              · {COVER_STYLES[cover.style].border === "none" ? "a thin line" : `the ${COVER_STYLES[cover.style].name} border`} around the
+              question pages too
+            </span>
+          </span>
+        </label>
       </fieldset>
 
       <div className="flex items-center gap-4 sm:col-span-2">

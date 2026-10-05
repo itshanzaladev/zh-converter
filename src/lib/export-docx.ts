@@ -19,13 +19,17 @@ import {
   WidthType,
 } from "docx";
 import { coverRows, expandTabs, type AssignmentDoc } from "./assignment";
-import { coverSpec, coverTitle, type CoverSpec } from "./cover-styles";
+import { coverSpec, coverTitle, pageBorder, type CoverSpec } from "./cover-styles";
+import { highlight } from "./highlight";
+import { ideTheme, type IdeTheme } from "./ide-themes";
 import { dataUrlToBytes, imageSize } from "./images";
+import type { Language } from "./types";
 
 /** A4 with 1" margins leaves ~6.27" of width; at 96 dpi that's ~600px. */
 const CONTENT_WIDTH_PX = 600;
 const MAX_IMAGE_HEIGHT_PX = 820;
 const CODE_FONT = "Consolas";
+const TAB_FONT = "Segoe UI";
 
 function fit(width: number, height: number, maxW: number, maxH: number) {
   const scale = Math.min(1, maxW / width, maxH / height);
@@ -163,14 +167,87 @@ const CODE_TEXT_PT = (CONTENT_WIDTH_TWIPS - NUMBERS_WIDTH_TWIPS - CODE_PAD_TWIPS
 /** Consolas glyphs are 0.55em wide. */
 const CONSOLAS_EM = 0.55;
 
+const fill = (color: string) => ({ type: ShadingType.CLEAR, fill: color, color: "auto" });
+const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+
+/** The IDE's file tab (and NetBeans' Source/History strip) as rows across the top of the code table. */
+function codeHeaderRows(fileName: string, theme: IdeTheme) {
+  const bar = theme.tabBar;
+  const tabBorder = bar.border ? { style: BorderStyle.SINGLE, size: 4, color: bar.border, space: 0 } : undefined;
+  const rows = [
+    new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: 2,
+          shading: fill(bar.background),
+          margins: { top: 40, bottom: 0, left: 0, right: 0 },
+          children: [
+            new Paragraph({
+              spacing: { after: 0 },
+              children: [
+                new TextRun({
+                  text: `   ${fileName}    ×   `,
+                  font: TAB_FONT,
+                  size: 16,
+                  bold: bar.bold,
+                  color: bar.text,
+                  shading: fill(bar.tab),
+                  border: tabBorder,
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
+  if (theme.toolbar) {
+    rows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 2,
+            shading: fill(theme.toolbar.background),
+            margins: { top: 30, bottom: 30, left: 60, right: 0 },
+            children: [
+              new Paragraph({
+                spacing: { after: 0 },
+                children: [
+                  new TextRun({
+                    text: " Source ",
+                    font: TAB_FONT,
+                    size: 14,
+                    color: theme.toolbar.text,
+                    shading: fill("FFFFFF"),
+                    border: { style: BorderStyle.SINGLE, size: 4, color: "C0C0C0", space: 0 },
+                  }),
+                  new TextRun({ text: "   History", font: TAB_FONT, size: 14, color: theme.toolbar.text }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  }
+  return rows;
+}
+
 /**
- * The code in one table cell and the line numbers in a narrow cell beside
- * it, so selecting the code copies only the code, indentation intact.
- * Long files shrink the font (9pt down to 7pt) so lines don't wrap; a line
- * that still wraps gets blank rows beside it to keep the numbers in line.
+ * The code drawn the way the chosen IDE shows it: its file tab, gutter,
+ * background and syntax colours. The code sits in one table cell and the
+ * line numbers in a narrow cell beside it, so selecting the code copies only
+ * the code, indentation intact. Long files shrink the font (9pt down to 7pt)
+ * so lines don't wrap; a line that still wraps gets blank rows beside it to
+ * keep the numbers in line.
  */
-function codeBlock(content: string) {
-  const lines = content.replace(/\n+$/, "").split("\n").map((line) => expandTabs(line).replace(/\s+$/, ""));
+function codeBlock(file: { name: string; content: string; language: Language }, theme: IdeTheme) {
+  const lines = file.content
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n+$/, "")
+    .split("\n")
+    .map((line) => expandTabs(line).replace(/\s+$/, ""));
+  const tokens = highlight(lines.join("\n"), file.language);
   const longest = Math.max(1, ...lines.map((line) => line.length));
   // Font size in half-points, in whole half-point steps between 7pt and 9pt.
   const size = Math.max(14, Math.min(18, Math.floor((CODE_TEXT_PT / (CONSOLAS_EM * longest)) * 2)));
@@ -184,35 +261,45 @@ function codeBlock(content: string) {
       new Paragraph({
         alignment: AlignmentType.RIGHT,
         spacing,
-        children: [new TextRun({ text: String(i + 1), font: CODE_FONT, size: size - 2, color: "A89A9E" })],
+        children: [new TextRun({ text: String(i + 1), font: CODE_FONT, size: size - 2, color: theme.gutter.number })],
       }),
     );
     for (let extra = 1; extra < Math.ceil(line.length / perLine); extra++) numbers.push(new Paragraph({ spacing, children: [] }));
   });
 
-  const shading = { type: ShadingType.CLEAR, fill: "FAF6F3", color: "auto" };
-  const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
-  const edge = { style: BorderStyle.SINGLE, size: 4, color: "E6D8D0" };
+  const code = lines.map(
+    (_, i) =>
+      new Paragraph({
+        spacing,
+        children: (tokens[i] ?? []).map((token) => {
+          const style = theme.tokens[token.kind];
+          return new TextRun({ text: token.text, font: CODE_FONT, size, color: style.color, bold: style.bold, italics: style.italic });
+        }),
+      }),
+  );
+
+  const edge = { style: BorderStyle.SINGLE, size: 4, color: theme.gutter.border ?? "3C3C3C" };
+  const gutterEdge = theme.gutter.border ? { style: BorderStyle.SINGLE, size: 4, color: theme.gutter.border } : NO_BORDER;
   return new Table({
     width: { size: CONTENT_WIDTH_TWIPS, type: WidthType.DXA },
     columnWidths: [NUMBERS_WIDTH_TWIPS, CONTENT_WIDTH_TWIPS - NUMBERS_WIDTH_TWIPS],
-    borders: { top: edge, bottom: edge, left: edge, right: edge, insideHorizontal: none, insideVertical: none },
+    borders: { top: edge, bottom: edge, left: edge, right: edge, insideHorizontal: NO_BORDER, insideVertical: NO_BORDER },
     rows: [
+      ...codeHeaderRows(file.name, theme),
       new TableRow({
         children: [
           new TableCell({
             width: { size: NUMBERS_WIDTH_TWIPS, type: WidthType.DXA },
-            shading,
+            shading: fill(theme.gutter.background),
+            borders: { right: gutterEdge },
             margins: { top: 120, bottom: 120, left: 60, right: 120 },
             children: numbers,
           }),
           new TableCell({
             width: { size: CONTENT_WIDTH_TWIPS - NUMBERS_WIDTH_TWIPS, type: WidthType.DXA },
-            shading,
+            shading: fill(theme.background),
             margins: { top: 120, bottom: 120, left: CODE_PAD_TWIPS, right: CODE_PAD_TWIPS },
-            children: lines.map(
-              (line) => new Paragraph({ spacing, children: [new TextRun({ text: line, font: CODE_FONT, size })] }),
-            ),
+            children: code,
           }),
         ],
       }),
@@ -229,6 +316,7 @@ function label(text: string) {
 
 async function questionsSection(doc: AssignmentDoc) {
   const children: (Paragraph | Table)[] = [];
+  const theme = ideTheme(doc.ide);
 
   for (const [index, question] of doc.questions.entries()) {
     children.push(
@@ -246,26 +334,30 @@ async function questionsSection(doc: AssignmentDoc) {
     }
 
     children.push(label("Code"));
-    for (const file of question.files) {
-      if (question.files.length > 1) {
-        children.push(
-          new Paragraph({
-            spacing: { before: 160, after: 80 },
-            children: [new TextRun({ text: file.name, font: CODE_FONT, size: 19, bold: true, color: "74656A" })],
-          }),
-        );
-      }
-      children.push(codeBlock(file.content));
-    }
+    // Each file sits under its own IDE tab, which carries its name.
+    question.files.forEach((file, i) => {
+      if (i > 0) children.push(new Paragraph({ spacing: { after: 0 }, children: [] }));
+      children.push(codeBlock(file, theme));
+    });
 
     if (question.output.status === "done") {
       children.push(label("Output"));
       children.push(await imageParagraph(question.output.image, CONTENT_WIDTH_PX, MAX_IMAGE_HEIGHT_PX, AlignmentType.LEFT));
     }
+
+    // A rule across the page closes the question, like Word's "---" line.
+    children.push(
+      new Paragraph({
+        spacing: { before: 240, after: 120 },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000", space: 1 } },
+        children: [],
+      }),
+    );
   }
 
   // Numbering continues from the cover, which is page 1.
-  return { properties: {}, footers: { default: pageFooter() }, children };
+  const borders = coverBorders(pageBorder(doc.cover));
+  return { properties: borders ? { page: { borders } } : {}, footers: { default: pageFooter() }, children };
 }
 
 export async function buildDocx(doc: AssignmentDoc) {

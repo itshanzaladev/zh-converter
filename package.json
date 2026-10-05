@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "docx": "^9.8.1",
     "fflate": "^0.8.3",
     "framer-motion": "^14.0.0",

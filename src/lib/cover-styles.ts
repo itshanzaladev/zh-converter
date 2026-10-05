@@ -87,6 +87,13 @@ export function coverSpec(cover: Pick<CoverDetails, "style">) {
   return COVER_STYLES[cover.style] ?? COVER_STYLES.classic;
 }
 
+/** The border for the pages after the cover: the cover style's own, or a thin one if it has none. */
+export function pageBorder(cover: Pick<CoverDetails, "style" | "pageBorder">): CoverSpec["border"] {
+  if (!cover.pageBorder) return "none";
+  const { border } = coverSpec(cover);
+  return border === "none" ? "single" : border;
+}
+
 /** The two title lines, biggest first, in the style's case. */
 export function coverTitle(cover: CoverDetails) {
   const spec = coverSpec(cover);

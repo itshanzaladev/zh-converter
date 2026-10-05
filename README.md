@@ -21,6 +21,8 @@ Open http://localhost:3000 and go to **Start an assignment**.
 - Input shows where it was typed: C, C++, Java, C#, Kotlin, Python, Ruby and R programs echo it as they read it; for the rest it's placed after each prompt
 - A PHP page that prints HTML is screenshotted like a web page
 - Word (.docx) and PDF export, generated entirely in the browser, with the cover centred like a standard university title page
+- Code drawn the way VS Code, Dev C++ or NetBeans shows it (the student picks one): file tab, gutter, background and syntax colours, in JetBrains Mono (`public/fonts`, SIL Open Font License). It stays real text, so it copies out exactly as written
+- Program output drawn as a plain Windows console: grey text on black, nothing else
 
 Flutter apps can't be run; students add a screenshot from their emulator.
 

@@ -12,11 +12,14 @@ import { captureConsoleOutput } from "@/lib/render-console";
 import { assignmentFilename, type AssignmentDoc } from "@/lib/assignment";
 import { downloadBlob } from "@/lib/images";
 import { CoverPage, withPlaceholders } from "@/components/cover-page";
+import { DEFAULT_IDE, IDE_THEMES, type IdeStyle } from "@/lib/ide-themes";
 import { CoverForm } from "./cover-form";
+import { IdePicker } from "./ide-picker";
 import { DropZone } from "./drop-zone";
 import { QuestionCard } from "./question-card";
 
 const COVER_KEY = "zh.cover";
+const IDE_KEY = "zh.ide";
 
 function loadCover(): CoverDetails {
   try {
@@ -24,6 +27,15 @@ function loadCover(): CoverDetails {
     return saved ? { ...EMPTY_COVER, ...JSON.parse(saved) } : EMPTY_COVER;
   } catch {
     return EMPTY_COVER;
+  }
+}
+
+function loadIde(): IdeStyle {
+  try {
+    const saved = localStorage.getItem(IDE_KEY);
+    return saved && saved in IDE_THEMES ? (saved as IdeStyle) : DEFAULT_IDE;
+  } catch {
+    return DEFAULT_IDE;
   }
 }
 
@@ -43,6 +55,7 @@ function Section({ step, title, children }: { step: number; title: string; child
 
 export default function Builder() {
   const [cover, setCover] = useState<CoverDetails>(loadCover);
+  const [ide, setIde] = useState<IdeStyle>(loadIde);
   const [files, setFiles] = useState<CodeFile[]>([]);
   const [questions, setQuestions] = useState<Record<number, Question>>({});
   const [errors, setErrors] = useState<string[]>([]);
@@ -55,6 +68,14 @@ export default function Builder() {
       // Storage can be full or blocked; the cover just won't be remembered.
     }
   }, [cover]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(IDE_KEY, ide);
+    } catch {
+      // As above: the choice just won't be remembered.
+    }
+  }, [ide]);
 
   const questionNumbers = useMemo(
     () => [...new Set(files.map((f) => f.question).filter((n): n is number => n !== null))].sort((a, b) => a - b),
@@ -179,6 +200,7 @@ export default function Builder() {
     try {
       const doc: AssignmentDoc = {
         cover,
+        ide,
         questions: questionNumbers.map((n) => ({ ...getQuestion(n), files: filesFor(n) })),
       };
       const blob =
@@ -201,7 +223,12 @@ export default function Builder() {
           <CoverForm cover={cover} onChange={setCover} onError={pushError} />
         </Section>
 
-        <Section step={2} title="Code files">
+        <Section step={2} title="Code style">
+          <p className="-mt-3 mb-5 text-muted">The code in your Word and PDF files will look like it does in this IDE.</p>
+          <IdePicker value={ide} onChange={setIde} />
+        </Section>
+
+        <Section step={3} title="Code files">
           <DropZone onFiles={addFiles} />
 
           <AnimatePresence>
@@ -263,10 +290,10 @@ export default function Builder() {
           )}
         </Section>
 
-        <Section step={3} title="Questions">
+        <Section step={4} title="Questions">
           {questionNumbers.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-line px-6 py-10 text-center text-muted">
-              Add code files in step 2 and each question shows up here with its output.
+              Add code files in step 3 and each question shows up here with its output.
             </p>
           ) : (
             <div className="space-y-5">

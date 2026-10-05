@@ -1,9 +1,12 @@
 import { coverSpec } from "./cover-styles";
+import type { IdeStyle } from "./ide-themes";
 import type { CodeFile, CoverDetails, OutputState } from "./types";
 
 /** Everything an exporter needs, already grouped and ordered. */
 export type AssignmentDoc = {
   cover: CoverDetails;
+  /** Which IDE the code is drawn like. */
+  ide: IdeStyle;
   questions: {
     number: number;
     statement: string;
