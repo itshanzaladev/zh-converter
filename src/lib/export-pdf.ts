@@ -1,4 +1,15 @@
-import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFOperator,
+  PDFOperatorNames,
+  rgb,
+  StandardFonts,
+  type PDFFont,
+  type PDFImage,
+  type PDFPage,
+} from "pdf-lib";
 import { coverRows, expandTabs, type AssignmentDoc } from "./assignment";
 import { coverSpec, coverTitle } from "./cover-styles";
 import { dataUrlToBytes } from "./images";
@@ -9,12 +20,13 @@ const MARGIN = 56;
 const CONTENT_W = PAGE[0] - MARGIN * 2;
 const BOTTOM = 60;
 
+/** Courier glyphs are exactly 0.6em wide, which the code layout relies on. */
 const CODE_SIZE = 8.5;
-const CODE_LINE = 12;
+const CODE_MIN_SIZE = 6;
 const CODE_PAD = 10;
 const GUTTER = 26;
-/** Courier glyphs are exactly 0.6em wide. */
-const CODE_CHARS = Math.floor((CONTENT_W - CODE_PAD * 2 - GUTTER) / (CODE_SIZE * 0.6));
+const NUMBER_SIZE = 7;
+const NBSP = " ";
 
 const ink = rgb(0.14, 0.1, 0.12);
 const muted = rgb(0.45, 0.4, 0.42);
@@ -91,26 +103,95 @@ class Writer {
     this.y -= opts.gap ?? 0;
   }
 
-  /** Code is drawn row by row so a long file flows across pages naturally. */
-  code(content: string) {
-    const rows: { no: number | null; text: string }[] = [];
-    content
+  private numberImages = new Map<number, PDFImage | null>();
+
+  /**
+   * Line numbers are drawn as tiny pictures, not text, so copying code out of
+   * the PDF never picks them up. Outside a browser (no canvas) they're left out.
+   */
+  private async lineNumber(no: number) {
+    if (this.numberImages.has(no)) return this.numberImages.get(no)!;
+    let image: PDFImage | null = null;
+    if (typeof document !== "undefined") {
+      const scale = 4;
+      const canvas = document.createElement("canvas");
+      canvas.width = (GUTTER - 6) * scale;
+      canvas.height = NUMBER_SIZE * 1.3 * scale;
+      const ctx = canvas.getContext("2d")!;
+      ctx.font = `${NUMBER_SIZE * scale}px "Courier New", Courier, monospace`;
+      ctx.fillStyle = "#a89a9e";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(String(no), canvas.width, NUMBER_SIZE * scale);
+      image = await this.pdf.embedPng(dataUrlToBytes(canvas.toDataURL("image/png")));
+    }
+    this.numberImages.set(no, image);
+    return image;
+  }
+
+  /**
+   * Draws text whose copied form is `copyAs` rather than what PDF readers
+   * rebuild from the glyphs (an ActualText span). Chrome and Edge squeeze
+   * spaces and drop blank lines when they rebuild it, which breaks pasted code.
+   */
+  private drawWithCopyText(copyAs: string, draw: () => void) {
+    const props = this.pdf.context.obj({ ActualText: PDFHexString.fromText(copyAs) });
+    // The PDF spec allows an inline dictionary here and pdf-lib writes it
+    // correctly; its types just don't list dictionaries as operator arguments.
+    const args = [PDFName.of("Span"), props] as unknown as PDFName[];
+    this.page.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, args));
+    draw();
+    this.page.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
+  }
+
+  /**
+   * Code is drawn line by line so a long file flows across pages naturally,
+   * and each line copies out exactly as written: indentation, spacing and
+   * blank lines kept, line numbers left out. Long lines shrink the font
+   * (down to 6pt) rather than wrap; a line that still doesn't fit wraps on
+   * screen at a space but copies as one line, and never splits across pages.
+   */
+  async code(content: string) {
+    const source = content
       .replace(/\n+$/, "")
       .split("\n")
-      .forEach((raw, i) => {
-        const line = safe(expandTabs(raw));
-        if (!line.length) rows.push({ no: i + 1, text: "" });
-        for (let start = 0; start < line.length; start += CODE_CHARS) {
-          rows.push({ no: start === 0 ? i + 1 : null, text: line.slice(start, start + CODE_CHARS) });
-        }
-      });
+      .map((raw) => expandTabs(raw).replace(/\s+$/, ""));
+    const width = CONTENT_W - CODE_PAD * 2 - GUTTER;
+    const longest = Math.max(1, ...source.map((line) => line.length));
+    const size = Math.max(CODE_MIN_SIZE, Math.min(CODE_SIZE, width / (longest * 0.6)));
+    const lineHeight = size * 1.41;
+    const perRow = Math.floor(width / (size * 0.6));
+
+    const lines = source.map((text, i) => {
+      const rows: string[] = [];
+      let rest = safe(text);
+      while (rest.length > perRow) {
+        const space = rest.lastIndexOf(" ", perRow);
+        const cut = space > perRow * 0.5 ? space + 1 : perRow;
+        rows.push(rest.slice(0, cut));
+        rest = rest.slice(cut);
+      }
+      rows.push(rest);
+      // Readers keep non-breaking spaces (and paste them as normal spaces)
+      // but squeeze ordinary ones. A blank line needs two to survive at all.
+      const copy = text ? text.replace(/ /g, NBSP) : NBSP + NBSP;
+      return { no: i + 1, rows, copy };
+    });
 
     let index = 0;
-    while (index < rows.length) {
-      this.ensure(CODE_LINE * 3 + CODE_PAD * 2);
-      const fit = Math.floor((this.y - BOTTOM - CODE_PAD * 2) / CODE_LINE);
-      const chunk = rows.slice(index, index + fit);
-      const height = chunk.length * CODE_LINE + CODE_PAD * 2;
+    while (index < lines.length) {
+      this.ensure(lineHeight * 3 + CODE_PAD * 2);
+      const fit = Math.floor((this.y - BOTTOM - CODE_PAD * 2) / lineHeight);
+      // Whole lines only, so a wrapped line stays on one page.
+      const chunk: typeof lines = [];
+      let used = 0;
+      while (index + chunk.length < lines.length) {
+        const next = lines[index + chunk.length];
+        if (chunk.length && used + next.rows.length > fit) break;
+        chunk.push(next);
+        used += next.rows.length;
+      }
+      const height = used * lineHeight + CODE_PAD * 2;
       this.page.drawRectangle({
         x: MARGIN,
         y: this.y - height,
@@ -120,28 +201,21 @@ class Writer {
         borderColor: codeBorder,
         borderWidth: 0.6,
       });
-      let rowY = this.y - CODE_PAD - CODE_LINE + 3;
-      for (const row of chunk) {
-        if (row.no !== null) {
-          const no = String(row.no);
-          this.page.drawText(no, {
-            x: MARGIN + CODE_PAD + GUTTER - 8 - this.fonts.mono.widthOfTextAtSize(no, 7.5),
-            y: rowY,
-            size: 7.5,
-            font: this.fonts.mono,
-            color: gutterInk,
-          });
+      let rowY = this.y - CODE_PAD - lineHeight + size * 0.35;
+      for (const line of chunk) {
+        const image = await this.lineNumber(line.no);
+        if (image) {
+          const h = NUMBER_SIZE * 1.3;
+          this.page.drawImage(image, { x: MARGIN + CODE_PAD - 4, y: rowY - h + NUMBER_SIZE, width: GUTTER - 6, height: h });
         }
-        if (row.text) {
-          this.page.drawText(row.text, {
-            x: MARGIN + CODE_PAD + GUTTER,
-            y: rowY,
-            size: CODE_SIZE,
-            font: this.fonts.mono,
-            color: ink,
-          });
-        }
-        rowY -= CODE_LINE;
+        // One span around all of a line's rows, so a wrapped line copies as one.
+        this.drawWithCopyText(line.copy, () => {
+          for (const row of line.rows) {
+            // A blank row still draws two spaces: Chrome drops blank lines with less.
+            this.page.drawText(row || "  ", { x: MARGIN + CODE_PAD + GUTTER, y: rowY, size, font: this.fonts.mono, color: ink });
+            rowY -= lineHeight;
+          }
+        });
       }
       this.y -= height;
       index += chunk.length;
@@ -264,7 +338,7 @@ export async function buildPdf(doc: AssignmentDoc) {
     w.text("Code", { font: w.fonts.bold, size: 12, color: accent, gap: 6 });
     for (const file of question.files) {
       if (question.files.length > 1) w.text(file.name, { font: w.fonts.mono, size: 9, color: muted, gap: 3 });
-      w.code(file.content);
+      await w.code(file.content);
       w.y -= 10;
     }
 

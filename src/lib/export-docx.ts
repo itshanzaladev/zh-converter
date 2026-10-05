@@ -5,6 +5,7 @@ import {
   Footer,
   HeadingLevel,
   ImageRun,
+  LineRuleType,
   Packer,
   PageBorderDisplay,
   PageBorderOffsetFrom,
@@ -153,33 +154,64 @@ async function coverSection(doc: AssignmentDoc) {
   return { properties: borders ? { page: { borders } } : {}, footers: { default: pageFooter() }, children };
 }
 
+/** A4 width minus the default 1" margins, in twips. */
+const CONTENT_WIDTH_TWIPS = 11906 - 1440 * 2;
+const NUMBERS_WIDTH_TWIPS = 620;
+const CODE_PAD_TWIPS = 160;
+/** Room for code on one line, in points. */
+const CODE_TEXT_PT = (CONTENT_WIDTH_TWIPS - NUMBERS_WIDTH_TWIPS - CODE_PAD_TWIPS * 2 - 80) / 20;
+/** Consolas glyphs are 0.55em wide. */
+const CONSOLAS_EM = 0.55;
+
+/**
+ * The code in one table cell and the line numbers in a narrow cell beside
+ * it, so selecting the code copies only the code, indentation intact.
+ * Long files shrink the font (9pt down to 7pt) so lines don't wrap; a line
+ * that still wraps gets blank rows beside it to keep the numbers in line.
+ */
 function codeBlock(content: string) {
-  const lines = content.replace(/\n+$/, "").split("\n");
+  const lines = content.replace(/\n+$/, "").split("\n").map((line) => expandTabs(line).replace(/\s+$/, ""));
+  const longest = Math.max(1, ...lines.map((line) => line.length));
+  // Font size in half-points, in whole half-point steps between 7pt and 9pt.
+  const size = Math.max(14, Math.min(18, Math.floor((CODE_TEXT_PT / (CONSOLAS_EM * longest)) * 2)));
+  const perLine = Math.floor(CODE_TEXT_PT / (CONSOLAS_EM * (size / 2)));
+  // Exact spacing on both cells keeps every number level with its line.
+  const spacing = { after: 0, line: Math.round((size / 2) * 1.35 * 20), lineRule: LineRuleType.EXACT };
+
+  const numbers: Paragraph[] = [];
+  lines.forEach((line, i) => {
+    numbers.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing,
+        children: [new TextRun({ text: String(i + 1), font: CODE_FONT, size: size - 2, color: "A89A9E" })],
+      }),
+    );
+    for (let extra = 1; extra < Math.ceil(line.length / perLine); extra++) numbers.push(new Paragraph({ spacing, children: [] }));
+  });
+
+  const shading = { type: ShadingType.CLEAR, fill: "FAF6F3", color: "auto" };
+  const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+  const edge = { style: BorderStyle.SINGLE, size: 4, color: "E6D8D0" };
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: {
-      top: { style: BorderStyle.SINGLE, size: 4, color: "E6D8D0" },
-      bottom: { style: BorderStyle.SINGLE, size: 4, color: "E6D8D0" },
-      left: { style: BorderStyle.SINGLE, size: 4, color: "E6D8D0" },
-      right: { style: BorderStyle.SINGLE, size: 4, color: "E6D8D0" },
-      insideHorizontal: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-      insideVertical: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-    },
+    width: { size: CONTENT_WIDTH_TWIPS, type: WidthType.DXA },
+    columnWidths: [NUMBERS_WIDTH_TWIPS, CONTENT_WIDTH_TWIPS - NUMBERS_WIDTH_TWIPS],
+    borders: { top: edge, bottom: edge, left: edge, right: edge, insideHorizontal: none, insideVertical: none },
     rows: [
       new TableRow({
         children: [
           new TableCell({
-            shading: { type: ShadingType.CLEAR, fill: "FAF6F3", color: "auto" },
-            margins: { top: 120, bottom: 120, left: 160, right: 160 },
+            width: { size: NUMBERS_WIDTH_TWIPS, type: WidthType.DXA },
+            shading,
+            margins: { top: 120, bottom: 120, left: 60, right: 120 },
+            children: numbers,
+          }),
+          new TableCell({
+            width: { size: CONTENT_WIDTH_TWIPS - NUMBERS_WIDTH_TWIPS, type: WidthType.DXA },
+            shading,
+            margins: { top: 120, bottom: 120, left: CODE_PAD_TWIPS, right: CODE_PAD_TWIPS },
             children: lines.map(
-              (line, i) =>
-                new Paragraph({
-                  spacing: { after: 0, line: 260 },
-                  children: [
-                    new TextRun({ text: `${String(i + 1).padStart(3, " ")}  `, font: CODE_FONT, size: 17, color: "A89A9E" }),
-                    new TextRun({ text: expandTabs(line), font: CODE_FONT, size: 18 }),
-                  ],
-                }),
+              (line) => new Paragraph({ spacing, children: [new TextRun({ text: line, font: CODE_FONT, size })] }),
             ),
           }),
         ],
