@@ -19,7 +19,7 @@ import {
   WidthType,
 } from "docx";
 import { coverRows, expandTabs, questionParts, type AssignmentDoc } from "./assignment";
-import { coverSpec, coverTitle, pageBorder, type CoverSpec } from "./cover-styles";
+import { COVER_FONTS, coverSpec, coverTitle, pageBorder, type CoverSpec } from "./cover-styles";
 import { highlight } from "./highlight";
 import { ideTheme, type IdeTheme } from "./ide-themes";
 import { dataUrlToBytes, imageSize } from "./images";
@@ -55,8 +55,6 @@ async function imageParagraph(
   });
 }
 
-const COVER_FONT = "Arial";
-
 /** Page number centred at the bottom of every page, the cover included. */
 const pageFooter = () =>
   new Footer({
@@ -68,15 +66,16 @@ const pageFooter = () =>
     ],
   });
 
-/** Page border for the cover, in Word's units (size in eighths of a point). */
-function coverBorders(border: CoverSpec["border"]) {
+/** Page border, in Word's units (size in eighths of a point). */
+function coverBorders(border: CoverSpec["border"], color = "000000") {
   if (border === "none") return undefined;
   const side = {
     single: { style: BorderStyle.SINGLE, size: 12 },
     double: { style: BorderStyle.DOUBLE, size: 6 },
     thick: { style: BorderStyle.SINGLE, size: 30 },
+    dashed: { style: BorderStyle.DASHED, size: 12 },
   }[border];
-  const edge = { ...side, color: "000000", space: 24 };
+  const edge = { ...side, color, space: 24 };
   return {
     pageBorders: { display: PageBorderDisplay.ALL_PAGES, offsetFrom: PageBorderOffsetFrom.PAGE },
     pageBorderTop: edge,
@@ -89,15 +88,17 @@ function coverBorders(border: CoverSpec["border"]) {
 /**
  * Everything centred: the logo, the assignment and subject, then the
  * student's details. Without a logo, the university name takes its place.
- * The cover style adds a border, capitals, a rule or a details table.
+ * The cover style sets the font and colour, and adds a border, capitals, a
+ * rule, or the details as a table or aligned columns.
  */
 async function coverSection(doc: AssignmentDoc) {
   const { cover } = doc;
   const spec = coverSpec(cover);
   const title = coverTitle(cover);
+  const font = COVER_FONTS[spec.font].word;
   const center = (runs: TextRun[], before: number, after: number) =>
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before, after }, children: runs });
-  const run = (text: string, size: number, bold = true) => new TextRun({ text, bold, size, font: COVER_FONT });
+  const run = (text: string, size: number, bold = true, color = "000000") => new TextRun({ text, bold, size, font, color });
 
   const children: (Paragraph | Table)[] = [];
   if (cover.logo) children.push(await imageParagraph(cover.logo, 240, 220));
@@ -105,14 +106,14 @@ async function coverSection(doc: AssignmentDoc) {
     if (cover.university) children.push(center([run(cover.university.toUpperCase(), 32)], cover.logo ? 160 : 0, 60));
     if (cover.campus) children.push(center([run(cover.campus, 24)], 0, 60));
   }
-  if (title.big) children.push(center([run(title.big, 44)], 360, 40));
-  if (title.small) children.push(center([run(title.small, 24)], title.big ? 0 : 360, 0));
+  if (title.big) children.push(center([run(title.big, 44, true, spec.accent)], 360, 40));
+  if (title.small) children.push(center([run(title.small, 24, true, spec.accent)], title.big ? 0 : 360, 0));
   if (spec.divider) {
     children.push(
       new Paragraph({
         spacing: { before: 480 },
         indent: { left: 3200, right: 3200 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: "000000", space: 1 } },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: spec.accent, space: 1 } },
         children: [],
       }),
     );
@@ -120,15 +121,21 @@ async function coverSection(doc: AssignmentDoc) {
 
   const rows = coverRows(cover);
   const gap = spec.divider ? 1100 : 1700;
-  if (spec.details === "table") {
-    const line = { style: BorderStyle.SINGLE, size: 4, color: "BFBFBF" };
-    const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+  if (spec.details === "centered") {
+    rows.forEach(([label, value], i) => {
+      children.push(center([run(`${label}: `, 38), run(value, 38, false)], i === 0 ? gap : 0, 160));
+    });
+  } else {
+    // A table with rules between rows, or the same columns with no lines at all.
+    const ruled = spec.details === "table";
+    const line = ruled ? { style: BorderStyle.SINGLE, size: 4, color: "BFBFBF" } : NO_BORDER;
+    const labelText = (label: string) => (ruled ? label : `${label}:`);
     children.push(new Paragraph({ spacing: { before: gap }, children: [] }));
     children.push(
       new Table({
         alignment: AlignmentType.CENTER,
         width: { size: 78, type: WidthType.PERCENTAGE },
-        borders: { top: line, bottom: line, left: none, right: none, insideHorizontal: line, insideVertical: none },
+        borders: { top: line, bottom: line, left: NO_BORDER, right: NO_BORDER, insideHorizontal: line, insideVertical: NO_BORDER },
         rows: rows.map(
           ([label, value]) =>
             new TableRow({
@@ -136,7 +143,7 @@ async function coverSection(doc: AssignmentDoc) {
                 new TableCell({
                   width: { size: 45, type: WidthType.PERCENTAGE },
                   margins: { top: 100, bottom: 100, left: 120, right: 120 },
-                  children: [new Paragraph({ children: [run(label, 26)] })],
+                  children: [new Paragraph({ children: [run(labelText(label), 26)] })],
                 }),
                 new TableCell({
                   width: { size: 55, type: WidthType.PERCENTAGE },
@@ -148,13 +155,9 @@ async function coverSection(doc: AssignmentDoc) {
         ),
       }),
     );
-  } else {
-    rows.forEach(([label, value], i) => {
-      children.push(center([run(`${label}: `, 38), run(value, 38, false)], i === 0 ? gap : 0, 160));
-    });
   }
 
-  const borders = coverBorders(spec.border);
+  const borders = coverBorders(spec.border, spec.accent);
   return { properties: borders ? { page: { borders } } : {}, footers: { default: pageFooter() }, children };
 }
 
@@ -358,7 +361,8 @@ async function questionsSection(doc: AssignmentDoc) {
   }
 
   // Numbering continues from the cover, which is page 1.
-  const borders = coverBorders(pageBorder(doc.cover));
+  const page = pageBorder(doc.cover);
+  const borders = coverBorders(page.border, page.color);
   return { properties: borders ? { page: { borders } } : {}, footers: { default: pageFooter() }, children };
 }
 

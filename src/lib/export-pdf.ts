@@ -167,17 +167,18 @@ class Writer {
   ) {}
 
   /** Border drawn on every new page; the cover draws its own, so this is set after it. */
-  pageBorder: CoverSpec["border"] = "none";
+  pageBorder: { border: CoverSpec["border"]; color: string } = { border: "none", color: "000000" };
 
-  frame(border: CoverSpec["border"]) {
-    const rect = (inset: number, thickness: number) =>
+  frame(border: CoverSpec["border"], color = "000000") {
+    const rect = (inset: number, thickness: number, dash?: number[]) =>
       this.page.drawRectangle({
         x: inset,
         y: inset,
         width: PAGE[0] - inset * 2,
         height: PAGE[1] - inset * 2,
-        borderColor: ink,
+        borderColor: hex(color),
         borderWidth: thickness,
+        borderDashArray: dash,
       });
     if (border === "single") rect(BORDER_INSET, 1.2);
     if (border === "double") {
@@ -185,13 +186,14 @@ class Writer {
       rect(BORDER_INSET + 4, 0.8);
     }
     if (border === "thick") rect(BORDER_INSET, 3);
+    if (border === "dashed") rect(BORDER_INSET, 1.2, [6, 4]);
   }
 
   /** Every page, the cover included, gets its number centred at the bottom. */
   newPage() {
     this.page = this.pdf.addPage(PAGE);
     this.y = PAGE[1] - MARGIN;
-    this.frame(this.pageBorder);
+    this.frame(this.pageBorder.border, this.pageBorder.color);
     this.pageNo++;
     const text = String(this.pageNo);
     this.page.drawText(text, {
@@ -493,45 +495,61 @@ class Writer {
 /** Distance of the cover border from the page edge; the page number sits just below it. */
 const BORDER_INSET = 46;
 
+type CoverFonts = { regular: PDFFont; bold: PDFFont };
+
+/** The cover's typeface as standard PDF fonts: Helvetica, Times or Courier. */
+async function coverFonts(pdf: PDFDocument, font: CoverSpec["font"]): Promise<CoverFonts> {
+  const [regular, bold] = {
+    sans: [StandardFonts.Helvetica, StandardFonts.HelveticaBold],
+    serif: [StandardFonts.TimesRoman, StandardFonts.TimesRomanBold],
+    mono: [StandardFonts.Courier, StandardFonts.CourierBold],
+  }[font];
+  return { regular: await pdf.embedFont(regular), bold: await pdf.embedFont(bold) };
+}
+
 /**
  * Cover page: everything centred. The logo (or the university name without
  * one), the assignment and subject, then the student's details. The cover
- * style adds a border, capitals, a rule or a details table.
+ * style sets the font and colour, and adds a border, capitals, a rule, or
+ * the details as a table or aligned columns.
  */
-async function drawCover(w: Writer, cover: CoverDetails) {
+async function drawCover(w: Writer, cover: CoverDetails, fonts: CoverFonts) {
   const spec = coverSpec(cover);
   const title = coverTitle(cover);
+  const accent = hex(spec.accent);
   w.newPage();
-  w.frame(spec.border);
+  w.frame(spec.border, spec.accent);
 
   if (cover.logo) await w.image(cover.logo, 180, true, 165);
   if (!cover.logo || spec.universityLine) {
     if (cover.logo) w.y -= 8;
-    if (cover.university) w.centered(cover.university.toUpperCase(), w.fonts.bold, 16);
-    if (cover.campus) w.centered(cover.campus, w.fonts.bold, 12);
+    if (cover.university) w.centered(cover.university.toUpperCase(), fonts.bold, 16);
+    if (cover.campus) w.centered(cover.campus, fonts.bold, 12);
   }
   w.y -= 18;
-  if (title.big) w.centered(title.big, w.fonts.bold, 22);
-  if (title.small) w.centered(title.small, w.fonts.bold, 12);
+  if (title.big) w.centered(title.big, fonts.bold, 22, accent);
+  if (title.small) w.centered(title.small, fonts.bold, 12, accent);
 
   if (spec.divider) {
     w.y -= 26;
-    w.page.drawLine({ start: { x: PAGE[0] / 2 - 80, y: w.y }, end: { x: PAGE[0] / 2 + 80, y: w.y }, thickness: 0.8, color: ink });
+    w.page.drawLine({ start: { x: PAGE[0] / 2 - 80, y: w.y }, end: { x: PAGE[0] / 2 + 80, y: w.y }, thickness: 0.8, color: accent });
   }
 
   w.y = Math.min(w.y - (spec.divider ? 50 : 70), 470);
   const rows = coverRows(cover);
-  if (spec.details === "table") {
+  if (spec.details !== "centered") {
+    // A table with rules between rows, or the same columns with no lines at all.
+    const ruled = spec.details === "table";
     const size = 13;
     const left = PAGE[0] / 2 - 175;
     const right = PAGE[0] / 2 + 175;
     const valueX = PAGE[0] / 2 - 15;
     const rule = (y: number) => w.page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness: 0.5, color: muted });
-    rule(w.y + size + 8);
+    if (ruled) rule(w.y + size + 8);
     for (const [label, value] of rows) {
-      w.page.drawText(safe(label), { x: left + 8, y: w.y, size, font: w.fonts.bold, color: ink });
-      w.page.drawText(safe(value), { x: valueX, y: w.y, size, font: w.fonts.regular, color: ink });
-      rule(w.y - 10);
+      w.page.drawText(safe(ruled ? label : `${label}:`), { x: left + 8, y: w.y, size, font: fonts.bold, color: ink });
+      w.page.drawText(safe(value), { x: valueX, y: w.y, size, font: fonts.regular, color: ink });
+      if (ruled) rule(w.y - 10);
       w.y -= size + 18;
     }
     return;
@@ -541,10 +559,10 @@ async function drawCover(w: Writer, cover: CoverDetails) {
     const labelText = `${label}:`;
     const valueText = safe(value);
     // A fixed gap rather than a trailing space, whose width varies between PDF viewers.
-    const labelWidth = w.fonts.bold.widthOfTextAtSize(labelText, size) + size * 0.3;
-    const x = (PAGE[0] - labelWidth - w.fonts.regular.widthOfTextAtSize(valueText, size)) / 2;
-    w.page.drawText(labelText, { x, y: w.y, size, font: w.fonts.bold, color: ink });
-    w.page.drawText(valueText, { x: x + labelWidth, y: w.y, size, font: w.fonts.regular, color: ink });
+    const labelWidth = fonts.bold.widthOfTextAtSize(labelText, size) + size * 0.3;
+    const x = (PAGE[0] - labelWidth - fonts.regular.widthOfTextAtSize(valueText, size)) / 2;
+    w.page.drawText(labelText, { x, y: w.y, size, font: fonts.bold, color: ink });
+    w.page.drawText(valueText, { x: x + labelWidth, y: w.y, size, font: fonts.regular, color: ink });
     w.y -= 32;
   }
 }
@@ -562,7 +580,7 @@ export async function buildPdf(doc: AssignmentDoc) {
   });
   const theme = ideTheme(doc.ide);
 
-  await drawCover(w, doc.cover);
+  await drawCover(w, doc.cover, await coverFonts(pdf, coverSpec(doc.cover).font));
   w.pageBorder = pageBorder(doc.cover);
 
   for (const question of doc.questions) {

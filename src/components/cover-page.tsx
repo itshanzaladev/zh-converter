@@ -1,5 +1,5 @@
 import { coverRows } from "@/lib/assignment";
-import { coverSpec, coverTitle } from "@/lib/cover-styles";
+import { COVER_FONTS, coverSpec, coverTitle } from "@/lib/cover-styles";
 import type { CoverDetails } from "@/lib/types";
 
 /** Fills empty fields with placeholders so a half-filled cover still previews its layout. */
@@ -20,9 +20,10 @@ export function withPlaceholders(cover: CoverDetails): CoverDetails {
 
 const BORDER = {
   none: "",
-  single: "border border-black",
-  double: "border-[3px] border-double border-black",
-  thick: "border-[3px] border-black",
+  single: "border border-solid",
+  double: "border-[3px] border-double",
+  thick: "border-[3px] border-solid",
+  dashed: "border border-dashed",
 };
 
 /**
@@ -34,10 +35,14 @@ export function CoverPage({ cover }: { cover: CoverDetails }) {
   const spec = coverSpec(cover);
   const title = coverTitle(cover);
   const rows = coverRows(cover);
+  const accent = `#${spec.accent}`;
 
   return (
-    <div className="aspect-[1/1.414] w-[260px] bg-white p-3 font-[Arial,Helvetica,sans-serif] text-black">
-      <div className={`flex h-full flex-col items-center px-3 pt-4 text-center ${BORDER[spec.border]}`}>
+    <div className="aspect-[1/1.414] w-[260px] bg-white p-3 text-black" style={{ fontFamily: COVER_FONTS[spec.font].css }}>
+      <div
+        className={`flex h-full flex-col items-center px-3 pt-4 text-center ${BORDER[spec.border]}`}
+        style={{ borderColor: accent }}
+      >
         {cover.logo && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={cover.logo} alt="" className="mx-auto h-14 w-14 object-contain" />
@@ -48,16 +53,25 @@ export function CoverPage({ cover }: { cover: CoverDetails }) {
             <div className="text-[6.5px] font-bold">{cover.campus}</div>
           </div>
         )}
-        <div className="mt-3 text-[11px] font-bold leading-tight">{title.big}</div>
-        <div className="text-[6.5px] font-bold">{title.small}</div>
-        {spec.divider && <div className="mt-3 h-px w-16 bg-black" />}
+        <div className="mt-3 text-[11px] font-bold leading-tight" style={{ color: accent }}>
+          {title.big}
+        </div>
+        <div className="text-[6.5px] font-bold" style={{ color: accent }}>
+          {title.small}
+        </div>
+        {spec.divider && <div className="mt-3 h-px w-16" style={{ background: accent }} />}
 
-        {spec.details === "table" ? (
-          <table className="mt-[14%] w-[88%] border-y border-[#bfbfbf] text-left text-[7px]">
+        {spec.details !== "centered" ? (
+          <table
+            className={`mt-[14%] w-[88%] text-left text-[7px] ${spec.details === "table" ? "border-y border-[#bfbfbf]" : ""}`}
+          >
             <tbody>
               {rows.map(([label, value]) => (
-                <tr key={label} className="border-b border-[#bfbfbf] last:border-b-0">
-                  <th className="py-[3px] pl-1 font-bold">{label}</th>
+                <tr
+                  key={label}
+                  className={spec.details === "table" ? "border-b border-[#bfbfbf] last:border-b-0" : ""}
+                >
+                  <th className="py-[3px] pl-1 font-bold">{spec.details === "table" ? label : `${label}:`}</th>
                   <td className="py-[3px] pr-1">{value}</td>
                 </tr>
               ))}

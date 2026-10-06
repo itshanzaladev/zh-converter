@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Bricolage_Grotesque, JetBrains_Mono, Onest } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { Cursor } from "@/components/cursor";
@@ -38,6 +39,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {children}
           <Cursor />
         </Providers>
+        {/* Vercel Web Analytics: counts visitors and page views on the deployed site. */}
+        <Analytics />
       </body>
     </html>
   );

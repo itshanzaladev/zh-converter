@@ -40,3 +40,5 @@ For production, use a paid Judge0 plan or a self-hosted Judge0 server.
 ## Deploying
 
 Vercel. Set the Judge0 variables in the project settings.
+
+Visitor counts come from Vercel Web Analytics (`<Analytics />` in `src/app/layout.tsx`). Turn on Analytics in the Vercel project's dashboard; it only counts visits to the deployed site, not localhost.

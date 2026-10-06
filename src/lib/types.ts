@@ -62,7 +62,21 @@ export type Question = {
   output: OutputState;
 };
 
-export type CoverStyle = "classic" | "bordered" | "framed" | "formal";
+export type CoverStyle =
+  | "classic"
+  | "bordered"
+  | "framed"
+  | "formal"
+  | "times"
+  | "royal"
+  | "maroon"
+  | "minimal"
+  | "dashed"
+  | "typewriter"
+  | "executive"
+  | "teal"
+  | "elegant"
+  | "forest";
 
 export type CoverDetails = {
   style: CoverStyle;
