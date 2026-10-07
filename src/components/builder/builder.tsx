@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FileDown, Loader2, X } from "lucide-react";
+import { Eye, FileDown, Loader2, X } from "lucide-react";
 import type { CodeFile, CoverDetails, OutputState, Question } from "@/lib/types";
 import { EMPTY_COVER } from "@/lib/types";
 import { readCodeFile, sortFiles } from "@/lib/files";
@@ -15,6 +15,7 @@ import { CoverPage, withPlaceholders } from "@/components/cover-page";
 import { DEFAULT_IDE, IDE_THEMES, type IdeStyle } from "@/lib/ide-themes";
 import { CoverForm } from "./cover-form";
 import { IdePicker } from "./ide-picker";
+import { PreviewDialog } from "./preview-dialog";
 import { DropZone } from "./drop-zone";
 import { QuestionCard } from "./question-card";
 
@@ -60,6 +61,8 @@ export default function Builder() {
   const [questions, setQuestions] = useState<Record<number, Question>>({});
   const [errors, setErrors] = useState<string[]>([]);
   const [exporting, setExporting] = useState<"docx" | "pdf" | null>(null);
+  /** The assignment preview: null when closed; blob and url are null while it's being built. */
+  const [preview, setPreview] = useState<{ blob: Blob | null; url: string | null } | null>(null);
 
   useEffect(() => {
     try {
@@ -194,15 +197,38 @@ export default function Builder() {
   const running = questionNumbers.some((n) => getQuestion(n).output.status === "running");
   const missingOutput = questionNumbers.filter((n) => getQuestion(n).output.status !== "done");
 
+  const assignmentDoc = (): AssignmentDoc => ({
+    cover,
+    ide,
+    questions: questionNumbers.map((n) => ({ ...getQuestion(n), files: filesFor(n) })),
+  });
+
+  /** Builds the PDF and shows it in the preview window; the same file downloads from there. */
+  async function openPreview() {
+    setPreview({ blob: null, url: null });
+    setErrors([]);
+    try {
+      const blob = await (await import("@/lib/export-pdf")).buildPdf(assignmentDoc());
+      setPreview((current) => (current ? { blob, url: URL.createObjectURL(blob) } : current));
+    } catch (error) {
+      console.error(error);
+      setPreview(null);
+      pushError(`The preview could not be created. ${error instanceof Error ? error.message : ""}`);
+    }
+  }
+
+  const closePreview = useCallback(() => {
+    setPreview((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }, []);
+
   async function exportAs(kind: "docx" | "pdf") {
     setExporting(kind);
     setErrors([]);
     try {
-      const doc: AssignmentDoc = {
-        cover,
-        ide,
-        questions: questionNumbers.map((n) => ({ ...getQuestion(n), files: filesFor(n) })),
-      };
+      const doc = assignmentDoc();
       const blob =
         kind === "docx"
           ? await (await import("@/lib/export-docx")).buildDocx(doc)
@@ -318,9 +344,35 @@ export default function Builder() {
       </div>
 
       <aside className="lg:sticky lg:top-24 lg:self-start">
-        <div className="mx-auto max-w-[260px] overflow-hidden rounded-lg shadow-[0_24px_50px_-28px_rgba(120,60,40,0.5),0_0_0_1px_rgba(36,26,30,0.06)]">
+        {/* The cover opens a preview of the whole assignment. */}
+        <button
+          type="button"
+          onClick={openPreview}
+          disabled={running}
+          aria-label="See preview of your assignment"
+          className="group relative mx-auto block max-w-[260px] overflow-hidden rounded-lg shadow-[0_24px_50px_-28px_rgba(120,60,40,0.5),0_0_0_1px_rgba(36,26,30,0.06)] transition-transform hover:-translate-y-1 disabled:cursor-wait"
+        >
           <CoverPage cover={withPlaceholders(cover)} />
-        </div>
+          <span className="absolute inset-0 grid place-items-center bg-[#241a1e]/0 transition-colors group-hover:bg-[#241a1e]/45">
+            <span className="flex translate-y-2 items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-medium text-[#241a1e] opacity-0 shadow transition group-hover:translate-y-0 group-hover:opacity-100">
+              <Eye size={16} /> Preview
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={openPreview}
+          disabled={running}
+          className="mx-auto mt-3 flex items-center gap-1.5 text-sm font-medium text-accent hover:underline disabled:opacity-50"
+        >
+          <Eye size={15} /> See preview of your assignment
+        </button>
+        <PreviewDialog
+          open={preview !== null}
+          url={preview?.url ?? null}
+          onClose={closePreview}
+          onDownload={() => preview?.blob && downloadBlob(preview.blob, assignmentFilename(cover, "pdf"))}
+        />
 
         <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
           <p className="font-display text-lg font-semibold">
